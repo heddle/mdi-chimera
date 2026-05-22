@@ -1,0 +1,93 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>edu.cnu.mdi</groupId>
+	<artifactId>mdi_chimera</artifactId>
+	<version>1.0.0-SNAPSHOT</version>
+	<name>mdi_chimera</name>
+
+	<description>
+		MDI and MDI-3D application for computing and visualizing exact
+		intersections
+		of rectangular and spherical grids.
+	</description>
+
+	<properties>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<maven.compiler.release>17</maven.compiler.release>
+
+		<mdi.version>1.2.1-SNAPSHOT</mdi.version>
+		<mdi3d.version>1.0.1-SNAPSHOT</mdi3d.version>
+
+		<junit.version>5.10.2</junit.version>
+		<maven.surefire.plugin.version>3.3.0</maven.surefire.plugin.version>
+	</properties>
+
+	<dependencies>
+
+		<!-- Core MDI framework -->
+		<dependency>
+			<groupId>io.github.heddle</groupId>
+			<artifactId>mdi</artifactId>
+			<version>${mdi.version}</version>
+			<exclusions>
+				<exclusion>
+					<groupId>xml-apis</groupId>
+					<artifactId>xml-apis</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+
+		<!-- Optional 3D MDI extension -->
+		<dependency>
+			<groupId>io.github.heddle</groupId>
+			<artifactId>mdi-3d</artifactId>
+			<version>${mdi3d.version}</version>
+			<exclusions>
+				<exclusion>
+					<groupId>xml-apis</groupId>
+					<artifactId>xml-apis</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+
+		<!-- Tests -->
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<version>${junit.version}</version>
+			<scope>test</scope>
+		</dependency>
+
+	</dependencies>
+
+
+	<build>
+		<plugins>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<version>3.13.0</version>
+				<configuration>
+					<release>${maven.compiler.release}</release>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<version>3.2.5</version>
+			</plugin>
+
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>exec-maven-plugin</artifactId>
+				<version>3.3.0</version>
+				<configuration>
+					<mainClass>edu.cnu.mdi.chimera.app.ChimeraApp</mainClass>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+</project>

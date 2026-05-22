@@ -1,0 +1,200 @@
+package edu.cnu.mdi.chimera.alg;
+
+import java.util.List;
+
+import edu.cnu.mdi.chimera.cell.Cell;
+import edu.cnu.mdi.chimera.cell.IntersectionType;
+import edu.cnu.mdi.chimera.patch.PrePatch;
+import edu.cnu.mdi.chimera.patch.ThetaPatch;
+
+public class ChimeraAlgorithmResult {
+
+    // The list of ALL cells INCLUDING KISS that intersect the sphere.
+    private List<Cell> intersectingCells;
+
+    // The list of KISS cells that intersect the sphere.
+    private List<Cell> kissCells;
+
+    // The list of prepatches built from non-Kiss intersecting cells.
+    private List<PrePatch> prePatches;
+
+    // The list of theta-patches produced by the theta splice.
+    private List<ThetaPatch> thetaPatches;
+    
+    // The total normalized area of the prepatches, used for feedback and debugging.
+    private double prePatchArea = 0.0;
+    
+    // The total normalized area of the theta patches, used for feedback and debugging.
+    private double thetaPatchArea = 0.0;
+
+    private ChimeraAlgorithmResult() {
+        intersectingCells = null;
+        prePatches        = null;
+    }
+
+    /**
+     * Create an empty result.
+     *
+     * @return an empty result
+     */
+    public static ChimeraAlgorithmResult empty() {
+        return new ChimeraAlgorithmResult();
+    }
+
+    // -----------------------------------------------------------------------
+    // Intersecting cells
+    // -----------------------------------------------------------------------
+
+    /**
+     * Get the list of all intersecting cells (including Kiss).
+     *
+     * @return the list of intersecting cells, or {@code null} if not yet set
+     */
+    public List<Cell> getIntersectingCells() {
+        return intersectingCells;
+    }
+
+    /**
+     * Get the list of Kiss cells.
+     *
+     * @return the list of Kiss cells, or {@code null} if not yet set
+     */
+    public List<Cell> getKissCells() {
+        return kissCells;
+    }
+
+    /**
+     * Get the count of intersecting cells (excluding Kiss).
+     *
+     * @return the count, or 0 if not yet set
+     */
+    public int getIntersectingCellCount() {
+        return intersectingCells == null ? 0 : intersectingCells.size() - getKissCellCount();
+    }
+
+    /**
+     * Get the count of Kiss cells.
+     *
+     * @return the count, or 0 if not yet set
+     */
+    public int getKissCellCount() {
+        return kissCells == null ? 0 : kissCells.size();
+    }
+
+    /**
+     * Set the list of intersecting cells. Automatically partitions Kiss cells
+     * into a separate list.
+     *
+     * @param intersectingCells the list of intersecting cells to set
+     */
+    public void setIntersectingCells(List<Cell> intersectingCells) {
+        this.intersectingCells = intersectingCells;
+        this.kissCells = intersectingCells.stream()
+                .filter(cell -> cell.getIntersectionType() == IntersectionType.KISS)
+                .toList();
+    }
+
+    // -----------------------------------------------------------------------
+    // PrePatches
+    // -----------------------------------------------------------------------
+
+    /**
+     * Get the list of prepatches.
+     *
+     * @return the list of prepatches, or {@code null} if not yet built
+     */
+    public List<PrePatch> getPrePatches() {
+        return prePatches;
+    }
+
+    /**
+     * Get the count of prepatches.
+     *
+     * @return the count, or 0 if not yet built
+     */
+    public int getPrePatchCount() {
+        return prePatches == null ? 0 : prePatches.size();
+    }
+
+    /**
+     * Set the list of prepatches.
+     *
+     * @param prePatches the prepatch list to store
+     */
+    public void setPrePatches(List<PrePatch> prePatches) {
+        this.prePatches = prePatches;
+
+		// compute total area for feedback and debugging
+		prePatchArea = 0;
+		if (prePatches != null) {
+
+			for (PrePatch prePatch : prePatches) {
+//				if (prePatch.isPolePatch()) {
+//					System.out.println("Warning: PrePatch is a pole patch. Skipping area calculation for this patch.");
+//					continue;
+//				}
+				prePatchArea += prePatch.areaEstimate();
+			}
+		}
+	}
+
+    // -----------------------------------------------------------------------
+    // ThetaPatches
+    // -----------------------------------------------------------------------
+
+    public List<ThetaPatch> getThetaPatches() { return thetaPatches; }
+
+    public int getThetaPatchCount() { return thetaPatches == null ? 0 : thetaPatches.size(); }
+
+    /**
+	 * Set the list of theta patches.
+	 *
+	 * @param thetaPatches the theta patch list to store
+	 */
+	public void setThetaPatches(List<ThetaPatch> thetaPatches) {
+		this.thetaPatches = thetaPatches;
+
+		// compute total area for feedback and debugging
+		thetaPatchArea = 0;
+		if (thetaPatches != null) {
+			for (ThetaPatch thetaPatch : thetaPatches) {
+				thetaPatchArea += thetaPatch.areaEstimate();
+			}
+		}
+	}
+
+    // -----------------------------------------------------------------------
+    // Feedback
+    // -----------------------------------------------------------------------
+
+    /**
+     * Adds a summary of the result to the provided feedback list.
+     *
+     * @param colorString a string representing the color to be used in the
+     *                    feedback (pass {@code ""} for no color tag)
+     * @param feedbackList the list to which the feedback summary will be added
+     */
+    public void feedbackSummary(String colorString, List<String> feedbackList) {
+        int total    = intersectingCells == null ? 0 : intersectingCells.size();
+        int kissCount = getKissCellCount();
+        int nonKiss  = total - kissCount;
+
+        if (total < 1) {
+            return;
+        }
+
+        feedbackList.add(String.format(
+                "%sintersecting cells  non-kiss: %d  kiss: %d  total: %d",
+                colorString, nonKiss, kissCount, total));
+
+        if (prePatches != null) {
+            feedbackList.add(String.format(
+                    "%sprepatches: %d normalized area: %.12f", colorString,
+                    prePatches.size(), prePatchArea));
+        }
+        if (thetaPatches != null) {
+            feedbackList.add(String.format(
+                    "%stheta patches: %d normalized area: %.12f", colorString, thetaPatches.size(), thetaPatchArea, thetaPatchArea));
+        }
+    }
+}
