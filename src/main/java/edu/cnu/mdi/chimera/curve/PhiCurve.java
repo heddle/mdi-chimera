@@ -95,6 +95,11 @@ public class PhiCurve extends BaseCurve {
                             -deltaTheta);
     }
 
+	@Override
+	public boolean isConstantTheta() {
+		return false;
+	}
+
     /**
      * Exact closed-form arc length: R·|Δθ|.
      *

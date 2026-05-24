@@ -48,13 +48,12 @@ public final class ChimeraAlgorithmController {
                     ChimeraAlgorithm.run(model.getGridSpec());
             model.setAlgorithmResult(result);
 
-//            model.algorithmCompleted(String.format(
-//                    "Algorithm completed. Found %,d intersecting cells.",
-//                    result.getIntersectingCellCount()));
+            model.algorithmCompleted("Algorithm completed.");
 
             return true;
         } catch (RuntimeException ex) {
             Log.getInstance().error("Algorithm failed: " + ex.getMessage());
+            ex.printStackTrace();
             model.algorithmFailed(ex);
             return false;
         }

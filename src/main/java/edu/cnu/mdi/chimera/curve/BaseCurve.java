@@ -3,6 +3,8 @@ package edu.cnu.mdi.chimera.curve;
 import org.apache.commons.math3.analysis.UnivariateFunction;
 import org.apache.commons.math3.analysis.integration.RombergIntegrator;
 
+import edu.cnu.mdi.chimera.app.ChimeraApp;
+import edu.cnu.mdi.chimera.grid.SphericalGrid;
 import edu.cnu.mdi.chimera.util.MathUtil;
 import edu.cnu.mdi.chimera.util.Point3D;
 import edu.cnu.mdi.chimera.util.SphericalVector;
@@ -25,11 +27,19 @@ import edu.cnu.mdi.chimera.util.SphericalVector;
  */
 public abstract class BaseCurve {
 
+	private static int nextCurveId = 0; // For debugging and logging purposes, assign a unique ID to each curve instance
+
     /** Tolerance for pole detection and other angular comparisons. */
     protected static final double TOL = 1.0e-8;
 
+    /** Maximum number of root-finding intervals for t parameter computations. */
+	protected static final int MAX_ROOT_INTERVALS = 100;
+
     /** Number of samples used for pole detection and winding-number scans. */
     private static final int POLE_SCAN_STEPS = 100;
+
+    /** Number of uniform sub-intervals used for initial bracketing of θ and φ crossings. */
+    protected static final int BRACKET_INTERVALS = 100;
 
     /** Number of sub-intervals used by the Romberg arc-length integrator. */
     private static final int ARC_LENGTH_MAX_ITER = 32;
@@ -52,6 +62,10 @@ public abstract class BaseCurve {
 
     /** Sphere radius. */
     public final double radius;
+
+    /** Unique ID for this curve instance, useful for debugging and logging. */
+    public final int curveId; // Unique ID for this curve instance, useful for debugging and logging
+
 
     // -----------------------------------------------------------------------
     // Construction
@@ -77,6 +91,7 @@ public abstract class BaseCurve {
         this.radius = r;
         this.sv0    = new SphericalVector(p0);
         this.sv1    = new SphericalVector(p1);
+        this.curveId = nextCurveId++; // Assign a unique ID to this curve instance
     }
 
     // -----------------------------------------------------------------------
@@ -146,6 +161,14 @@ public abstract class BaseCurve {
     }
 
     /**
+     * Returns true if this curve has constant θ (i.e., is a {@link ThetaCurve} or
+     * was constructed as a GeneralCurve but turned out to have
+     * constant theta).
+     * @return true if this curve has constant θ, false otherwise
+     */
+    public abstract boolean isConstantTheta();
+
+    /**
      * Returns the spherical coordinates at parameter {@code t}.
      *
      * @param t parameter in [0, 1]
@@ -195,8 +218,12 @@ public abstract class BaseCurve {
         for (int i = 0; i <= POLE_SCAN_STEPS; i++) {
             double t  = i * step;
             double th = thetaFn.value(t);
-            if (Math.abs(th) < TOL)            return PoleStatus.NORTH_ON_CURVE;
-            if (Math.abs(th - Math.PI) < TOL)  return PoleStatus.SOUTH_ON_CURVE;
+            if (Math.abs(th) < TOL) {
+				return PoleStatus.NORTH_ON_CURVE;
+			}
+            if (Math.abs(th - Math.PI) < TOL) {
+				return PoleStatus.SOUTH_ON_CURVE;
+			}
         }
         return PoleStatus.NONE;
     }
@@ -308,4 +335,21 @@ public abstract class BaseCurve {
         double hi = Math.min(1.0, t + h);
         return MathUtil.normalizeAngle(phi(hi) - phi(lo)) / (hi - lo);
     }
+
+    /**
+     * Returns the 0-based index of the θ grid cell containing the midpoint of this curve.
+     * @return the 0-based index of the θ grid cell containing the midpoint of this curve
+     */
+    public int getMidpointThetaIndex() {
+    	double midTheta = theta(0.5);
+    	SphericalGrid grid = ChimeraApp.getInstance().getSphericalGrid();
+    	return grid.getThetaGrid().cellIndex(midTheta);
+    }
+
+    public String shortString() {
+		return String.format("Curve %d: %s %s", curveId, sv0.toStringDegrees("sv0"), sv1.toStringDegrees("sv1"));
+	}
+
+
+
 }

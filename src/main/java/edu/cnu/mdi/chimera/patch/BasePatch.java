@@ -3,12 +3,12 @@ package edu.cnu.mdi.chimera.patch;
 import java.util.ArrayList;
 import java.util.List;
 
+import edu.cnu.mdi.chimera.app.ChimeraApp;
 import edu.cnu.mdi.chimera.area.SphericalPolygonArea;
 import edu.cnu.mdi.chimera.curve.BaseCurve;
+import edu.cnu.mdi.chimera.curve.Crossing;
 import edu.cnu.mdi.chimera.curve.BaseCurve.PoleStatus;
-import edu.cnu.mdi.chimera.grid.CartesianGrid;
-import edu.cnu.mdi.chimera.grid.Grid1D;
-import edu.cnu.mdi.chimera.grid.SphericalGrid;
+import edu.cnu.mdi.chimera.curve.CompositeCurve;
 import edu.cnu.mdi.chimera.util.MathUtil;
 import edu.cnu.mdi.chimera.util.Point3D;
 import edu.cnu.mdi.chimera.util.ThetaPhi;
@@ -43,7 +43,7 @@ public abstract class BasePatch {
     protected static final double TOL      = 1.0e-8;
 
     /** Samples per curve for area estimation. The paper uses n=5. */
-    protected static final int DEFAULT_AREA_SAMPLES = 5;
+    protected static final int DEFAULT_AREA_SAMPLES = 50;
 
     private static final double WINDING_TOL = 0.01; // accumulated rounding over 100 steps/curve
 
@@ -53,51 +53,42 @@ public abstract class BasePatch {
 
     public final List<BaseCurve> curves;
     public final double          radius;
-    public final CartesianGrid   cartesianGrid;
-    public final SphericalGrid   sphericalGrid;
-    public final Grid1D          xGrid, yGrid, zGrid, thetaGrid, phiGrid;
     public final int             nx, ny, nz;
     public final int             nTheta, nPhi;
 
     private Boolean _enclosesNorthPole = null;
     private Boolean _enclosesSouthPole = null;
+    
+    // A single curve made from the set of BaseCurves
+    public final CompositeCurve compositeCurve;
 
     // -----------------------------------------------------------------------
     // Construction
     // -----------------------------------------------------------------------
 
-    public BasePatch(CartesianGrid cartGrid, SphericalGrid sphGrid,
-                     List<BaseCurve> curves,
+    public BasePatch(List<BaseCurve> curves,
                      int nx, int ny, int nz,
                      int nTheta, int nPhi) {
 
-        if (cartGrid == null) throw new IllegalArgumentException("CartesianGrid must not be null.");
-        if (sphGrid  == null) throw new IllegalArgumentException("SphericalGrid must not be null.");
         if (curves == null || curves.size() < 2)
             throw new IllegalArgumentException("A patch requires at least two curves.");
 
-        this.cartesianGrid = cartGrid;
-        this.sphericalGrid = sphGrid;
-        this.xGrid     = cartGrid.getXGrid();
-        this.yGrid     = cartGrid.getYGrid();
-        this.zGrid     = cartGrid.getZGrid();
-        this.thetaGrid = sphGrid.getThetaGrid();
-        this.phiGrid   = sphGrid.getPhiGrid();
         this.curves    = curves;
-        this.radius    = sphGrid.getRadius();
+        this.radius    = ChimeraApp.getInstance().getRadius();
         this.nx = nx;  this.ny = ny;  this.nz = nz;
         this.nTheta = nTheta;  this.nPhi = nPhi;
 
-        if (!validateLoop(curves))
+        if (!validateLoop(curves)) {
             throw new IllegalArgumentException(
                 "Curves do not form a closed loop for patch (" +
                 nx+","+ny+","+nz+","+nTheta+","+nPhi+").");
+        }
+        this.compositeCurve = new CompositeCurve(curves);
     }
 
     /** Convenience constructor for prepatches (nTheta = nPhi = -1). */
-    public BasePatch(CartesianGrid cartGrid, SphericalGrid sphGrid,
-                     List<BaseCurve> curves, int nx, int ny, int nz) {
-        this(cartGrid, sphGrid, curves, nx, ny, nz, -1, -1);
+    public BasePatch(List<BaseCurve> curves, int nx, int ny, int nz) {
+        this(curves, nx, ny, nz, -1, -1);
     }
 
     // -----------------------------------------------------------------------
@@ -288,4 +279,6 @@ public abstract class BasePatch {
             enclosesNorthPole() ? "✓" : "✗",
             enclosesSouthPole() ? "✓" : "✗");
     }
+    
+
 }

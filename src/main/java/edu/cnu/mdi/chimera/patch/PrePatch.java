@@ -3,9 +3,12 @@ package edu.cnu.mdi.chimera.patch;
 import java.util.ArrayList;
 import java.util.List;
 
+import edu.cnu.mdi.chimera.app.ChimeraApp;
 import edu.cnu.mdi.chimera.cell.Cell;
 import edu.cnu.mdi.chimera.cell.IntersectionType;
 import edu.cnu.mdi.chimera.curve.BaseCurve;
+import edu.cnu.mdi.chimera.curve.Crossing;
+import edu.cnu.mdi.chimera.curve.CompositeCurve;
 import edu.cnu.mdi.chimera.curve.GeneralCurve;
 import edu.cnu.mdi.chimera.edge.Edge;
 import edu.cnu.mdi.chimera.grid.CartesianGrid;
@@ -50,18 +53,22 @@ public class PrePatch extends BasePatch {
     /**
      * Constructs a PrePatch from an already-built curve list.
      *
-     * @param cartGrid Cartesian grid
-     * @param sphGrid  spherical grid
      * @param curves   ordered closed loop of {@link GeneralCurve}s
      * @param nx       Cartesian x cell index
      * @param ny       Cartesian y cell index
      * @param nz       Cartesian z cell index
      */
-    private PrePatch(CartesianGrid cartGrid, SphericalGrid sphGrid,
-                     List<BaseCurve> curves,
-                     int nx, int ny, int nz) {
-        super(cartGrid, sphGrid, curves, nx, ny, nz);
-    }
+    private PrePatch(List<BaseCurve> curves,
+			int nx, int ny, int nz) {
+		super(curves, nx, ny, nz);
+
+		// sanity check, all curves should be general curves
+		for (BaseCurve curve : curves) {
+			if (!(curve instanceof GeneralCurve)) {
+				throw new IllegalArgumentException("PrePatch constructor: all curves must be GeneralCurves.");
+			}
+		}
+	}
 
     // -----------------------------------------------------------------------
     // Factory method
@@ -74,18 +81,14 @@ public class PrePatch extends BasePatch {
      * Kiss cell and not fully inside or outside the sphere.</p>
      *
      * @param cell     the intersection cell (must not be Kiss or UNKNOWN)
-     * @param cartGrid the Cartesian grid
-     * @param sphGrid  the spherical grid
-     * @return the constructed PrePatch
+      * @return the constructed PrePatch
      * @throws IllegalArgumentException if the cell is a Kiss, has no ordered
      *                                  edges, has an invalid common-face
      *                                  result, or if the curves do not form
      *                                  a closed loop
      */
-    public static PrePatch from(Cell cell,
-                                CartesianGrid cartGrid,
-                                SphericalGrid sphGrid) {
-
+    public static PrePatch from(Cell cell) {
+    	
         if (cell.getIntersectionType() == IntersectionType.KISS) {
             throw new IllegalArgumentException(
                 "PrePatch.from: Kiss cells must be handled separately.");
@@ -97,6 +100,8 @@ public class PrePatch extends BasePatch {
                 "PrePatch.from: cell (" + cell.nx + "," + cell.ny + "," + cell.nz +
                 ") has no ordered edges.");
         }
+        
+        CartesianGrid cartGrid = ChimeraApp.getInstance().getCartesianGrid();
 
         // Pre-fetch all eight cell corners once — used for every face lookup.
         double[][] cellCorners = GridSupport.getCellCorners(
@@ -126,12 +131,11 @@ public class PrePatch extends BasePatch {
             Point3D.Double[] faceCorners = getFaceCorners(cellCorners, faceIndex);
 
             curves.add(new GeneralCurve(
-                    p0, p1, sphGrid.getRadius(),
+                    p0, p1, ChimeraApp.getInstance().getRadius(),
                     faceCorners[0], faceCorners[1], faceCorners[2]));
         }
 
-        return new PrePatch(cartGrid, sphGrid, curves,
-                            cell.nx, cell.ny, cell.nz);
+        return new PrePatch(curves, cell.nx, cell.ny, cell.nz);
     }
 
     // -----------------------------------------------------------------------
@@ -153,6 +157,7 @@ public class PrePatch extends BasePatch {
      */
     @Override
     public boolean containsPoint(double x, double y, double z) {
+    	CartesianGrid cartesianGrid = ChimeraApp.getInstance().getCartesianGrid();
         int[] idx = cartesianGrid.getIndices(x, y, z, new int[3]);
         return idx[0] == nx && idx[1] == ny && idx[2] == nz;
     }
@@ -211,9 +216,7 @@ public class PrePatch extends BasePatch {
      * @param sphGrid  the spherical grid
      * @return list of PrePatches, one per non-Kiss cell
      */
-    public static List<PrePatch> buildAll(List<Cell> cells,
-                                          CartesianGrid cartGrid,
-                                          SphericalGrid sphGrid) {
+    public static List<PrePatch> buildAll(List<Cell> cells) {
         List<PrePatch> patches = new ArrayList<>();
         int failed = 0;
 
@@ -222,7 +225,7 @@ public class PrePatch extends BasePatch {
                 continue;
             }
             try {
-                patches.add(PrePatch.from(cell, cartGrid, sphGrid));
+                patches.add(PrePatch.from(cell));
             } catch (IllegalArgumentException ex) {
                 failed++;
                 System.err.printf("[PrePatch] Failed for cell (%d,%d,%d): %s%n",
@@ -234,4 +237,38 @@ public class PrePatch extends BasePatch {
                 patches.size(), failed);
         return patches;
     }
+    
+    /**
+	 * Counts the total number of theta crossings across all curves in this
+	 * prepatch. This is a diagnostic method.
+	 *
+	 * @return total number of theta crossings in this prepatch
+	 */
+    public int getTotalNumberThetaCrossings() {
+		int count = 0;
+		for (BaseCurve curve : curves) {
+			if (curve instanceof GeneralCurve) {
+				GeneralCurve gc = (GeneralCurve) curve;
+				count += gc.thetaCrossings.size();
+			}
+		}
+		return count;
+	}
+    
+    /**
+	 * Retrieves a list of all theta crossings across all curves in this
+	 * prepatch. 
+	 * @return list of all theta crossings in this prepatch
+	 */
+	public List<Crossing> getAllThetaCrossings() {
+		List<Crossing> crossings = new ArrayList<>();
+		for (BaseCurve curve : curves) {
+			if (curve instanceof GeneralCurve) {
+				GeneralCurve gc = (GeneralCurve) curve;
+				crossings.addAll(gc.thetaCrossings);
+			}
+		}
+		return Crossing.removeDuplicates(crossings);
+	}
+
 }

@@ -33,6 +33,7 @@ import edu.cnu.mdi.mapping.projection.IMapProjection;
 import edu.cnu.mdi.ui.colors.ColorMapSelectorPanel;
 
 import edu.cnu.mdi.ui.colors.ScientificColorMap;
+import edu.cnu.mdi.ui.colors.X11Colors;
 import edu.cnu.mdi.util.PropertyUtils;
 import edu.cnu.mdi.util.UnicodeUtils;
 
@@ -57,6 +58,11 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 	// Reusable point for projection calculations to avoid unnecessary object
 	// creation.
 	private int[] indexArray = new int[5];
+	
+	private static final Color preLineColor = X11Colors.getX11Color("red");
+	private static final Color preFillColor = X11Colors.getX11Color("red", 64);
+	private static final Color thetaLineColor = X11Colors.getX11Color("dark green");
+	private static final Color thetaFillColor = X11Colors.getX11Color("dark green", 64);
 
 
 	/** Shared Chimera model. */
@@ -143,15 +149,17 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 			drawKissMarkers(g, container);
 		}
 		
-		// Drawprepatches if enabled
-		if (optionPanel.showPrepatches()) {
-			ChimeraAlgorithmResult result = model.getAlgorithmResult();
-			if (result != null) {
-				drawPatchList(g, container, result.getPrePatches(), null, Color.red);
+		ChimeraAlgorithmResult result = model.getAlgorithmResult();
+		if (result != null) {
+			if (optionPanel.showThetaPatches()) {
+				drawPatchList(g, container, result.getThetaPatches(), thetaFillColor, thetaLineColor);
+			}
+			if (optionPanel.showPrepatches()) {
+				drawPatchList(g, container, result.getPrePatches(), preFillColor, preLineColor);
 			}
 		}
 	}
-	
+
 	// Draw a list of patches with specified fill and line colors. 
 	// This is used for prepatches, theta patches, and phi patches.
 	private void drawPatchList(Graphics2D g, IContainer container, List<? extends BasePatch> patches, 
@@ -162,9 +170,12 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 		MapContainer mapContainer = (MapContainer) container;
 
 		for (BasePatch patch : patches) {
-			DrawPatch.drawPatch(g, mapContainer, patch, fillColor, lineColor, 1.5f, LineStyle.SOLID);
+			if (patch.polar())
+				DrawPatch.drawPatch(g, mapContainer, patch, fillColor, lineColor, 3.0f, LineStyle.DOT);
+			else
+				DrawPatch.drawPatch(g, mapContainer, patch, fillColor, lineColor, 1.5f, LineStyle.SOLID);
 		}
-		
+
 	}
 	
 	// Draw markers for cells identified as "Kiss" cells by the algorithm, 

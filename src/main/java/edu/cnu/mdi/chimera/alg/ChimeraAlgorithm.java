@@ -33,7 +33,7 @@ public class ChimeraAlgorithm {
         result.setIntersectingCells(intersectingCells);
 
         // Step 2: build prepatches from all non-Kiss cells.
-        List<PrePatch> prePatches = PrePatch.buildAll(intersectingCells, cartGrid, sphGrid);
+        List<PrePatch> prePatches = PrePatch.buildAll(intersectingCells);
         result.setPrePatches(prePatches);
 
         // Step 3: theta splice — cut each prepatch by the spherical theta grid.
@@ -41,8 +41,6 @@ public class ChimeraAlgorithm {
         for (PrePatch pre : prePatches) {
             thetaPatches.addAll(ThetaPatch.splice(pre));
         }
-        System.out.printf("Theta splice: %d prepatches -> %d theta patches%n",
-                prePatches.size(), thetaPatches.size());
         result.setThetaPatches(thetaPatches);
 
         // TODO: Step 4 — phi splice

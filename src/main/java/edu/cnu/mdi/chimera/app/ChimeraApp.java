@@ -7,6 +7,8 @@ import edu.cnu.mdi.app.BaseMDIApplication;
 import edu.cnu.mdi.chimera.alg.ChimeraAlgorithmController;
 import edu.cnu.mdi.chimera.dialog.GridSetupDialog;
 import edu.cnu.mdi.chimera.dialog.MonteCarloDialog;
+import edu.cnu.mdi.chimera.grid.CartesianGrid;
+import edu.cnu.mdi.chimera.grid.SphericalGrid;
 import edu.cnu.mdi.chimera.model.ChimeraGridSpec;
 import edu.cnu.mdi.chimera.model.ChimeraModel;
 import edu.cnu.mdi.chimera.model.ModelChangedEvent;
@@ -41,7 +43,7 @@ public class ChimeraApp extends BaseMDIApplication {
 
 	/** JSON view for debugging. Not always visible. */
 	private JsonView jsonView;
-	
+
 	private ChimeraAlgorithmController algorithmController;
 
 	/** the main data model for Chimera with the grid information */
@@ -66,10 +68,8 @@ public class ChimeraApp extends BaseMDIApplication {
 	 */
 	public static ChimeraApp getInstance() {
 		if (INSTANCE == null) {
-			INSTANCE = new ChimeraApp(PropertyUtils.TITLE, "Chimera",
-					PropertyUtils.CONSOLELOG, true,
-					PropertyUtils.BACKGROUND, X11Colors.getX11Color("dark orange"),
-					PropertyUtils.FRACTION, 0.8);
+			INSTANCE = new ChimeraApp(PropertyUtils.TITLE, "Chimera", PropertyUtils.CONSOLELOG, true,
+					PropertyUtils.BACKGROUND, X11Colors.getX11Color("dark orange"), PropertyUtils.FRACTION, 0.8);
 		}
 		return INSTANCE;
 	}
@@ -81,7 +81,7 @@ public class ChimeraApp extends BaseMDIApplication {
 
 	@Override
 	protected void addInitialViews() {
-	    chimeraView2D = new ChimeraView2D(chimeraModel);
+		chimeraView2D = new ChimeraView2D(chimeraModel);
 
 		// Log view is useful but not always visible.
 		logView = new LogView();
@@ -91,20 +91,39 @@ public class ChimeraApp extends BaseMDIApplication {
 		jsonView = new JsonView();
 		jsonView.setVisible(false);
 
-	    chimeraModel.addModelChangedListener(event -> {
-	        String message = event.getMessage();
-	        if (message != null && !message.isBlank()) {
-	            System.out.println("[Chimera] " + message);
-	        }
+		chimeraModel.addModelChangedListener(event -> {
+			String message = event.getMessage();
+			if (message != null && !message.isBlank()) {
+				System.out.println("[Chimera] " + message);
+			}
+			
+			switch (event.getType()) {
+			case ALGORITHM_STARTED:
+				Log.getInstance().info("Algorithm started.");
+				break;
+			case ALGORITHM_COMPLETED:
+				Log.getInstance().info("Algorithm completed.");
+				chimeraView2D.refresh();
+				break;
+			case ALGORITHM_FAILED:
+				Log.getInstance().error("Algorithm failed. ");
+				break;
+			case GRID_SPEC_CHANGED:
+				Log.getInstance().config("Grid specification changed. ");
+				Log.getInstance().config(chimeraModel.getGridSpec().summary());
+				break;
 
-	        if (event.getType() == ModelChangedEvent.Type.GRID_SPEC_CHANGED) {
-	            Log.getInstance().config(chimeraModel.getGridSpec().summary());
-	        }
-	    });
+			default:
+				// For other event types, no specific action is needed here.
+				break;
+			}
+
+		});
 
 	}
 
-	// Add menu items for app-specific commands, such as grid setup. This is called from the constructor after the base
+	// Add menu items for app-specific commands, such as grid setup. This is called
+	// from the constructor after the base
 	private void modifyMenus() {
 		addGridMenu();
 		addMonteCarloMenu();
@@ -124,7 +143,8 @@ public class ChimeraApp extends BaseMDIApplication {
 
 	}
 
-	// Adds the "Monte Carlo" menu with options to generate and clear Monte Carlo points.
+	// Adds the "Monte Carlo" menu with options to generate and clear Monte Carlo
+	// points.
 	private void addMonteCarloMenu() {
 		JMenu mcMenu = new JMenu("Monte Carlo");
 		getJMenuBar().add(mcMenu);
@@ -142,12 +162,12 @@ public class ChimeraApp extends BaseMDIApplication {
 	 * Adds the algorithm menu.
 	 */
 	private void addAlgorithmMenu() {
-	    JMenu algorithmMenu = new JMenu("Algorithm");
-	    getJMenuBar().add(algorithmMenu);
+		JMenu algorithmMenu = new JMenu("Algorithm");
+		getJMenuBar().add(algorithmMenu);
 
-	    JMenuItem runAlgorithmItem = new JMenuItem("Run Algorithm");
-	    runAlgorithmItem.addActionListener(e -> algorithmController.runAlgorithm());
-	    algorithmMenu.add(runAlgorithmItem);
+		JMenuItem runAlgorithmItem = new JMenuItem("Run Algorithm");
+		runAlgorithmItem.addActionListener(e -> algorithmController.runAlgorithm());
+		algorithmMenu.add(runAlgorithmItem);
 //
 //	    JMenuItem exportJsonItem = new JMenuItem("Export Final Patches JSON...");
 //	    exportJsonItem.addActionListener(e -> exportFinalPatchesJson());
@@ -155,9 +175,9 @@ public class ChimeraApp extends BaseMDIApplication {
 //
 //	    algorithmMenu.addSeparator();
 //
-	    JMenuItem clearAlgorithmItem = new JMenuItem("Clear Algorithm Result");
-	    clearAlgorithmItem.addActionListener(e -> algorithmController.clearAlgorithmResult());
-	    algorithmMenu.add(clearAlgorithmItem);
+		JMenuItem clearAlgorithmItem = new JMenuItem("Clear Algorithm Result");
+		clearAlgorithmItem.addActionListener(e -> algorithmController.clearAlgorithmResult());
+		algorithmMenu.add(clearAlgorithmItem);
 	}
 
 	// Show the grid setup dialog and update the model if the user accepts a new
@@ -167,7 +187,6 @@ public class ChimeraApp extends BaseMDIApplication {
 			chimeraModel.setGridSpec(spec);
 		}
 	}
-
 
 	/**
 	 * Place the views in the virtual desktop in a reasonable default layout.
@@ -184,6 +203,52 @@ public class ChimeraApp extends BaseMDIApplication {
 		virtualViewMove(jsonView, 2, VirtualView.BOTTOMRIGHT);
 	}
 
+	// -------- convenience methods to access views and model --------
+
+	/**
+	 * Get the model
+	 * 
+	 * @return the ChimeraModel instance
+	 */
+	public ChimeraModel getChimeraModel() {
+		return chimeraModel;
+	}
+
+	/**
+	 * Get the GridSpec from the model
+	 * 
+	 * @return the GridSpec from the model
+	 */
+	public ChimeraGridSpec getGridSpec() {
+		return chimeraModel.getGridSpec();
+	}
+
+	/**
+	 * Get the CartesianGrid from the model's GridSpec
+	 * 
+	 * @return the CartesianGrid from the model's GridSpec
+	 */
+	public CartesianGrid getCartesianGrid() {
+		return getGridSpec().getCartesianGrid();
+	}
+
+	/**
+	 * Get the SphericalGrid from the model's GridSpec
+	 * 
+	 * @return the SphericalGrid from the model's GridSpec
+	 */
+	public SphericalGrid getSphericalGrid() {
+		return getGridSpec().getSphericalGrid();
+	}
+	
+	/**
+	 * Get the radius of the spherical grid from the model's GridSpec
+	 * 
+	 * @return the radius of the spherical grid from the model's GridSpec
+	 */
+	public double getRadius() {
+		return getSphericalGrid().getRadius();
+	}
 
 	/**
 	 * Application entry point.
@@ -193,6 +258,5 @@ public class ChimeraApp extends BaseMDIApplication {
 	public static void main(String[] args) {
 		BaseMDIApplication.launch(ChimeraApp::getInstance);
 	}
-
 
 }

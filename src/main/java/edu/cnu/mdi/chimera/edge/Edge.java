@@ -5,6 +5,8 @@ import edu.cnu.mdi.chimera.grid.GridSupport;
 import edu.cnu.mdi.chimera.util.Point3D;
 
 public class Edge {
+	
+	private static final double TOL = 1.0e-14;
 
 	private Point3D.Double startPoint;
 	private Point3D.Double endPoint;
@@ -157,11 +159,11 @@ public class Edge {
         } else {
             t = (-B - sqrtD) / (2 * A);
         }
-
-        // Verify that the intersection lies on the segment.
-        if (t < 0 || t > 1) {
-            throw new IllegalArgumentException("The intersection does not lie on the segment.");
-        }
+        
+        if (t < -TOL || t > 1 + TOL) {
+			throw new IllegalArgumentException("The intersection does not lie on the segment. t = " + t);
+		}
+        t = Math.max(0, Math.min(1, t)); // Clamp t to [0, 1] to handle numerical issues.
 
         // Compute the intersection point.
         double ix = p0.x + t * dx;

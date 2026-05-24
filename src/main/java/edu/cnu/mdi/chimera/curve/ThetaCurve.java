@@ -94,6 +94,11 @@ public class ThetaCurve extends BaseCurve {
                               MathUtil.normalizeAngle(phi0 + deltaPhi),
                               -deltaPhi);
     }
+    
+	@Override
+	public boolean isConstantTheta() {
+		return true;
+	}
 
     /**
      * Exact closed-form arc length: R·sin(θ*)·|Δφ|.
