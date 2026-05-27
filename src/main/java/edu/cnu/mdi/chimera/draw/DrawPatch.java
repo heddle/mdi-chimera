@@ -43,7 +43,7 @@ public class DrawPatch {
 		Point2D.Double[] latLonPoints = new Point2D.Double[num];
 		for (int i = 0; i < num; i++) {
 			ThetaPhi tp = vertices.get(i);
-			double lat = tp.getTheta() - PIOVER2; // Convert to latitude
+			double lat = PIOVER2 - tp.getTheta(); // Convert theta to latitude
 			double lon = tp.getPhi(); // Convert to longitude
 			
 			if (lat < -Math.PI / 2.0 || lat > Math.PI / 2.0 || lon < -Math.PI || lon > Math.PI) {

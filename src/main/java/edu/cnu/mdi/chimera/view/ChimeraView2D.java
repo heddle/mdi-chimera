@@ -65,6 +65,9 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 	private static final Color preFillColor = X11Colors.getX11Color("red", 64);
 	private static final Color thetaLineColor = X11Colors.getX11Color("dark green");
 	private static final Color thetaFillColor = X11Colors.getX11Color("dark green", 64);
+	
+	//for hover highlighting of patches. This is not a model property because it's purely visual and transient.
+	private BasePatch highlightedPrePatch = null;
 
 
 	/** Shared Chimera model. */
@@ -159,6 +162,12 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 				drawPatchList(g, container, result.getPrePatches(), preFillColor, preLineColor);
 			}
 		}
+		
+		
+		if (highlightedPrePatch != null) {
+			System.out.println("Highlighting patch: " + highlightedPrePatch);
+			DrawPatch.drawPatch(g, (MapContainer)container, highlightedPrePatch, Color.YELLOW, Color.ORANGE, 3.0f, LineStyle.SOLID);
+		}
 	}
 
 	// Draw a list of patches with specified fill and line colors. 
@@ -176,7 +185,6 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 			else
 				DrawPatch.drawPatch(g, mapContainer, patch, fillColor, lineColor, 1.5f, LineStyle.SOLID);
 		}
-
 	}
 	
 	// Draw markers for cells identified as "Kiss" cells by the algorithm, 
@@ -402,15 +410,29 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 		int ntheta = indexArray[3];
 		int nphi = indexArray[4];
 		
-		BasePatch patch = null;
-		if (optionPanel.showPrepatches() && prePatches != null && !prePatches.isEmpty()) {
-			patch = BasePatch.fromSortedList(prePatches, nx, ny, nz, -1, -1);
-		} 
+		BasePatch patch = getHotPatch(container, pp, wp);
 		
 		if (patch != null) {
 			feedbackStrings.add(colorPrefix + patch);
 			feedbackStrings.add(colorPrefix + String.format("Area estimate: %.8f", patch.areaEstimate()));
 		}
+	}
+	
+	// Get the most relevant patch at the mouse location, if any. This is used for hover highlighting and feedback.
+	private BasePatch getHotPatch(IContainer container, Point pp, Point2D.Double wp) {
+		int nx = indexArray[0];
+		int ny = indexArray[1];
+		int nz = indexArray[2];
+		int ntheta = indexArray[3];
+		int nphi = indexArray[4];
+		
+		List<PrePatch> prePatches = model.getAlgorithmResult().getPrePatches();
+		
+		BasePatch patch = null;
+		if (prePatches != null && !prePatches.isEmpty()) {
+			patch = BasePatch.fromSortedList(prePatches, nx, ny, nz, -1, -1);
+		} 
+		return patch;
 	}
 
 	// Add feedback from the algorithm result, such as patch classifications and summaries.
@@ -427,6 +449,16 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 		Point pp = he.getLocation();
 		MapContainer container = (MapContainer) getIContainer();
 		HoverInfoWindow win = container.getHoverWindow();
+		System.out.println("Hover update at " + pp);
+		highlightedPrePatch = getHotPatch(container, pp, null);
+		refresh();
+	}
+	
+	@Override
+	public void hoverClosed(HoverEvent he) {
+		System.out.println("Hover closed");
+		highlightedPrePatch = null;
+		refresh();
 	}
 
 
