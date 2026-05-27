@@ -388,6 +388,7 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 		feedbackStrings.add(colorPrefix + "Monte Carlo points: " + mcCount);
 	}
 
+	// Add feedback about patches, such as the most relevant patch at the mouse location and its area estimate.
 	private void addPatchFeedback(IContainer container, Point pp, Point2D.Double wp, List<String> feedbackStrings) {
 		String colorPrefix = "$powder blue$";
 		
@@ -412,6 +413,7 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 		}
 	}
 
+	// Add feedback from the algorithm result, such as patch classifications and summaries.
 	private void algorithmFeedback(IContainer container, Point pp, Point2D.Double wp, List<String> feedbackStrings) {
 		ChimeraAlgorithmResult result = model.getAlgorithmResult();
 		if (result != null) {
