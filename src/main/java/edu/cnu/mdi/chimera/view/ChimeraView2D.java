@@ -20,12 +20,14 @@ import edu.cnu.mdi.chimera.map.ChimeraMapControlPanel;
 import edu.cnu.mdi.chimera.mc.MonteCarloPoint;
 import edu.cnu.mdi.chimera.model.ChimeraModel;
 import edu.cnu.mdi.chimera.patch.BasePatch;
+import edu.cnu.mdi.chimera.patch.PrePatch;
 import edu.cnu.mdi.component.OptionPanel;
 import edu.cnu.mdi.container.IContainer;
-import edu.cnu.mdi.graphics.SymbolDraw;
 import edu.cnu.mdi.graphics.style.LineStyle;
 import edu.cnu.mdi.graphics.style.SymbolType;
 import edu.cnu.mdi.graphics.toolbar.ToolBits;
+import edu.cnu.mdi.hover.HoverEvent;
+import edu.cnu.mdi.hover.HoverInfoWindow;
 import edu.cnu.mdi.log.Log;
 import edu.cnu.mdi.mapping.MapView2D;
 import edu.cnu.mdi.mapping.container.MapContainer;
@@ -67,7 +69,6 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 
 	/** Shared Chimera model. */
 	private final ChimeraModel model;
-
 
 	/** Active color map for Monte Carlo points. */
 	private ScientificColorMap monteCarloColorMap = ScientificColorMap.VIRIDIS;
@@ -357,9 +358,7 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 			
 			addGridFeedback(container, pp, wp, feedbackStrings);
 			addMonteCarloFeedback(container, pp, wp, feedbackStrings);
-			addPrepatchFeedback(container, pp, wp, feedbackStrings);
-			addThetaPatchFeedback(container, pp, wp, feedbackStrings);
-			addPhiPatchFeedback(container, pp, wp, feedbackStrings);
+			addPatchFeedback(container, pp, wp, feedbackStrings);
 			algorithmFeedback(container, pp, wp, feedbackStrings);
 		}
 	}
@@ -389,18 +388,30 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 		feedbackStrings.add(colorPrefix + "Monte Carlo points: " + mcCount);
 	}
 
-	private void addPrepatchFeedback(IContainer container, Point pp, Point2D.Double wp, List<String> feedbackStrings) {
-		String colorPrefix = "$magenta$";
+	private void addPatchFeedback(IContainer container, Point pp, Point2D.Double wp, List<String> feedbackStrings) {
+		String colorPrefix = "$powder blue$";
+		
+		//which do we show? Show most important
+		// that have a shown flag.
+		
+		List<PrePatch> prePatches = model.getAlgorithmResult().getPrePatches();
+		int nx = indexArray[0];
+		int ny = indexArray[1];
+		int nz = indexArray[2];
+		int ntheta = indexArray[3];
+		int nphi = indexArray[4];
+		
+		BasePatch patch = null;
+		if (optionPanel.showPrepatches() && prePatches != null && !prePatches.isEmpty()) {
+			patch = BasePatch.fromSortedList(prePatches, nx, ny, nz, -1, -1);
+		} 
+		
+		if (patch != null) {
+			feedbackStrings.add(colorPrefix + patch);
+			feedbackStrings.add(colorPrefix + String.format("Area estimate: %.8f", patch.areaEstimate()));
+		}
 	}
 
-	private void addThetaPatchFeedback(IContainer container, Point pp, Point2D.Double wp, List<String> feedbackStrings) {
-		String colorPrefix = "$brown$";
-	}
-	
-	private void addPhiPatchFeedback(IContainer container, Point pp, Point2D.Double wp, List<String> feedbackStrings) {
-		String colorPrefix = "$purple$";
-	}
-	
 	private void algorithmFeedback(IContainer container, Point pp, Point2D.Double wp, List<String> feedbackStrings) {
 		ChimeraAlgorithmResult result = model.getAlgorithmResult();
 		if (result != null) {
@@ -409,7 +420,12 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 		}
 	}
 
-
+	@Override
+	public void hoverUpdate(HoverEvent he) {
+		Point pp = he.getLocation();
+		MapContainer container = (MapContainer) getIContainer();
+		HoverInfoWindow win = container.getHoverWindow();
+	}
 
 
 }

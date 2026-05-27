@@ -8,6 +8,8 @@ import java.awt.geom.Point2D;
 import java.awt.geom.Rectangle2D;
 
 import edu.cnu.mdi.container.IContainer;
+import edu.cnu.mdi.mapping.container.MapContainer;
+import edu.cnu.mdi.mapping.graphics.MapGraphics;
 import edu.cnu.mdi.mapping.projection.EProjection;
 import edu.cnu.mdi.mapping.projection.IMapProjection;
 import edu.cnu.mdi.mapping.theme.MapTheme;
@@ -59,12 +61,6 @@ public class ArchimedesLambertCylindricalProjection implements IMapProjection {
 
     /** Projection y maximum. */
     private static final double YMAX = 1.0;
-
-    /** Number of samples used for drawing latitude lines. */
-    private static final int LAT_SAMPLES = 361;
-
-    /** Number of samples used for drawing longitude lines. */
-    private static final int LON_SAMPLES = 181;
 
     /** Central longitude in radians. */
     private double centralLongitude;
@@ -149,66 +145,15 @@ public class ArchimedesLambertCylindricalProjection implements IMapProjection {
     @Override
     public void drawLatitudeLine(Graphics2D g2, IContainer container, double latitude) {
         double lat = clampLatitude(latitude);
-
-        Path2D.Double path = new Path2D.Double();
-        Point screen = new Point();
-        Point2D.Double ll = new Point2D.Double();
-        Point2D.Double xy = new Point2D.Double();
-
-        boolean started = false;
-
-        for (int i = 0; i < LAT_SAMPLES; i++) {
-            double lon = -Math.PI + 2.0 * Math.PI * i / (LAT_SAMPLES - 1);
-
-            ll.x = lon;
-            ll.y = lat;
-            latLonToXY(ll, xy);
-            container.worldToLocal(screen, xy);
-
-            if (!started) {
-                path.moveTo(screen.x, screen.y);
-                started = true;
-            } else {
-                path.lineTo(screen.x, screen.y);
-            }
-        }
-
-        java.awt.Color oldColor = g2.getColor();
-        g2.setColor(theme.getGraticuleColor());
-        g2.draw(path);
-        g2.setColor(oldColor);
+     	MapGraphics.drawHorizontalLatitudeLine(g2, (MapContainer)container, lat,
+    			getCentralLongitude(), theme);
     }
 
     @Override
-    public void drawLongitudeLine(Graphics2D g2, IContainer container, double longitude) {
-        Path2D.Double path = new Path2D.Double();
-        Point screen = new Point();
-        Point2D.Double ll = new Point2D.Double();
-        Point2D.Double xy = new Point2D.Double();
-
-        boolean started = false;
-
-        for (int i = 0; i < LON_SAMPLES; i++) {
-            double lat = -Math.PI / 2.0 + Math.PI * i / (LON_SAMPLES - 1);
-
-            ll.x = longitude;
-            ll.y = lat;
-            latLonToXY(ll, xy);
-            container.worldToLocal(screen, xy);
-
-            if (!started) {
-                path.moveTo(screen.x, screen.y);
-                started = true;
-            } else {
-                path.lineTo(screen.x, screen.y);
-            }
-        }
-
-        java.awt.Color oldColor = g2.getColor();
-        g2.setColor(theme.getGraticuleColor());
-        g2.draw(path);
-        g2.setColor(oldColor);
-    }
+	public void drawLongitudeLine(Graphics2D g2, IContainer container, double longitude) {
+		double lon = wrapLongitude(longitude);
+		MapGraphics.drawVerticalLongitudeLine(g2, (MapContainer) container, lon, theme);
+	}
 
     @Override
     public Shape createClipShape(IContainer container) {
@@ -327,4 +272,6 @@ public class ArchimedesLambertCylindricalProjection implements IMapProjection {
     private static double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
     }
+    
+
 }

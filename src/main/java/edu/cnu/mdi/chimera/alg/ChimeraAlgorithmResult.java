@@ -1,5 +1,6 @@
 package edu.cnu.mdi.chimera.alg;
 
+import java.util.Collections;
 import java.util.List;
 
 import edu.cnu.mdi.chimera.cell.Cell;
@@ -123,6 +124,7 @@ public class ChimeraAlgorithmResult {
      */
     public void setPrePatches(List<PrePatch> prePatches) {
         this.prePatches = prePatches;
+        Collections.sort(this.prePatches);
 
 		// compute total area for feedback and debugging
 		prePatchArea = 0;
@@ -153,6 +155,7 @@ public class ChimeraAlgorithmResult {
 	 */
 	public void setThetaPatches(List<ThetaPatch> thetaPatches) {
 		this.thetaPatches = thetaPatches;
+        Collections.sort(this.thetaPatches);
 
 		// compute total area for feedback and debugging
 		thetaPatchArea = 0;

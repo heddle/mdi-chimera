@@ -8,7 +8,6 @@ import edu.cnu.mdi.chimera.cell.Cell;
 import edu.cnu.mdi.chimera.cell.IntersectionType;
 import edu.cnu.mdi.chimera.curve.BaseCurve;
 import edu.cnu.mdi.chimera.curve.Crossing;
-import edu.cnu.mdi.chimera.curve.CompositeCurve;
 import edu.cnu.mdi.chimera.curve.GeneralCurve;
 import edu.cnu.mdi.chimera.edge.Edge;
 import edu.cnu.mdi.chimera.grid.CartesianGrid;
