@@ -6,16 +6,24 @@ import java.awt.geom.Point2D;
 import java.util.List;
 import java.util.Objects;
 
+import edu.cnu.mdi.chimera.curve.BaseCurve;
+import edu.cnu.mdi.chimera.curve.Crossing;
 import edu.cnu.mdi.chimera.patch.BasePatch;
+import edu.cnu.mdi.chimera.patch.PrePatch;
+import edu.cnu.mdi.chimera.util.SphericalVector;
 import edu.cnu.mdi.chimera.util.ThetaPhi;
 import edu.cnu.mdi.graphics.style.LineStyle;
+import edu.cnu.mdi.graphics.style.SymbolType;
+import edu.cnu.mdi.mapping.MapView2D;
 import edu.cnu.mdi.mapping.container.MapContainer;
 import edu.cnu.mdi.mapping.graphics.MapGraphics;
+import edu.cnu.mdi.ui.colors.X11Colors;
 
 public class DrawPatch {
 	
+	// Constant for converting theta to latitude in radians (latitude = π/2 - theta)
 	private static final double PIOVER2 = Math.PI / 2.0;
-	
+		
 	/**
 	 * Draws a patch on the map using the provided Graphics2D object and MapContainer.
 	 *
@@ -56,6 +64,29 @@ public class DrawPatch {
 		
 		MapGraphics.drawMapPolygon(g2, container, latLonPoints, fillColor, lineColor,
 				lineWidth, lineStyle);
+	}
+	
+	public static void drawThetaCrossings(Graphics2D g2, MapContainer container, PrePatch patch) {
+		Objects.requireNonNull(g2, "Graphics2D object cannot be null");
+		Objects.requireNonNull(container, "MapContainer cannot be null");
+		Objects.requireNonNull(patch, "BasePatch cannot be null");
+		
+		MapView2D view = (MapView2D)(container.getView());
+		
+		List<Crossing> crossings = patch.getAllThetaCrossings();
+		if (crossings == null || crossings.isEmpty()) {
+			// No crossings to draw
+			return;
+		}
+		
+		for (Crossing crossing : crossings) {
+			BaseCurve curve = crossing.curve();
+			SphericalVector pos = curve.getSphericalVector(crossing.t());
+			double lat = PIOVER2 - pos.theta; // Convert theta to latitude
+			double lon = pos.phi; // Convert to longitude
+			
+			view.drawSymbol(g2, lat, lon, SymbolType.CIRCLE, 8, Color.black, Color.yellow);
+		}
 	}
 
 }

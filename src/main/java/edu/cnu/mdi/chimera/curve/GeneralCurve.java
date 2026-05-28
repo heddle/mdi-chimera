@@ -56,7 +56,7 @@ public class GeneralCurve extends BaseCurve {
 	 * theta band. This filters tangencies and endpoint grazes.
 	 */
 	private static final double SIDE_TEST_DT = 1.0e-6;
-
+	
 	/**
 	 * The inverse rotation matrix (3×3) that maps the primed frame back to the
 	 * original frame. Stored as a flat array for efficiency.
@@ -76,7 +76,7 @@ public class GeneralCurve extends BaseCurve {
 	private final double deltaPrimePhi;
 
 	/** Cached list of crossings where the curve crosses theta grid lines. */
-	public final List<Crossing> thetaCrossings;
+	public List<Crossing> thetaCrossings;
 
 	// -----------------------------------------------------------------------
 	// Construction
@@ -179,7 +179,6 @@ public class GeneralCurve extends BaseCurve {
 		this.thetaStar = thetaStar;
 		this.primePhi0 = primePhi0;
 		this.deltaPrimePhi = deltaPrimePhi;
-		thetaCrossings = getThetaCrossings(); // Precompute crossings for efficiency
 	}
 
 	// -----------------------------------------------------------------------
@@ -216,7 +215,138 @@ public class GeneralCurve extends BaseCurve {
 			return MathUtil.normalizeAngle(Math.atan2(xyz[1], xyz[0]));
 		};
 	}
+	
+	/**
+	 * Splits this GENERAL curve at its interior theta-grid crossings.
+	 *
+	 * <p>
+	 * The returned curves follow the same geometric path, in the same order and
+	 * direction, as this curve. If this curve has no interior theta crossings, or
+	 * if the only theta crossings occur at the endpoints, the returned list contains
+	 * only this curve.
+	 * </p>
+	 *
+	 * <p>
+	 * Endpoint crossings are deliberately ignored here. They are junction events
+	 * between adjacent boundary curves, not reasons to split this curve internally.
+	 * </p>
+	 *
+	 * @return an ordered list of curve pieces, preserving the direction of this curve
+	 */
+	public List<GeneralCurve> splitAtThetaCrossings() {
+	    List<Crossing> crossings = getThetaCrossings();
 
+	    if (crossings == null || crossings.isEmpty()) {
+	        return List.of(this);
+	    }
+
+	    /*
+	     * Collect only true interior split parameters. getThetaCrossings() may include
+	     * endpoint candidate crossings so the patch-level splicer can reason about
+	     * junctions. Those are not internal split points for this curve.
+	     */
+	    List<Double> splitTs = new ArrayList<>();
+
+	    for (Crossing crossing : crossings) {
+	        if (crossing == null) {
+	            continue;
+	        }
+
+	        double t = crossing.t();
+
+	        if (!Double.isFinite(t)) {
+	            continue;
+	        }
+
+	        if (isEndpointT(t)) {
+	            continue;
+	        }
+
+	        t = Math.max(0.0, Math.min(1.0, t));
+
+	        boolean duplicate = false;
+	        for (double existing : splitTs) {
+	            if (Math.abs(existing - t) < 1.0e-10) {
+	                duplicate = true;
+	                break;
+	            }
+	        }
+
+	        if (!duplicate) {
+	            splitTs.add(t);
+	        }
+	    }
+
+	    if (splitTs.isEmpty()) {
+	        return List.of(this);
+	    }
+
+	    /*
+	     * Sorting by t preserves the original direction of travel. This is true
+	     * regardless of the sign of deltaPrimePhi because t is the curve's own
+	     * parameter, increasing from p0 to p1.
+	     */
+	    splitTs.sort(Double::compare);
+
+	    List<GeneralCurve> pieces = new ArrayList<>();
+
+	    double t0 = 0.0;
+	    for (double t1 : splitTs) {
+	        if (t1 - t0 > TOL) {
+	            pieces.add(subCurve(t0, t1));
+	        }
+	        t0 = t1;
+	    }
+
+	    if (1.0 - t0 > TOL) {
+	        pieces.add(subCurve(t0, 1.0));
+	    }
+
+	    if (pieces.isEmpty()) {
+	        return List.of(this);
+	    }
+
+	    return pieces;
+	}
+	
+	/**
+	 * Creates a sub-curve corresponding to the parameter interval [t0, t1] of this
+	 * curve.
+	 *
+	 * <p>
+	 * The new curve uses the same primed-frame small-circle representation as this
+	 * curve, but with a restricted primed azimuthal sweep. This preserves the
+	 * original orientation: increasing local parameter on the returned curve
+	 * corresponds to increasing {@code t} on this curve.
+	 * </p>
+	 *
+	 * @param t0 starting parameter on this curve
+	 * @param t1 ending parameter on this curve
+	 * @return a GENERAL curve representing this curve from {@code t0} to {@code t1}
+	 */
+	private GeneralCurve subCurve(double t0, double t1) {
+	    if (t0 < -TOL || t0 > 1.0 + TOL || t1 < -TOL || t1 > 1.0 + TOL) {
+	        throw new IllegalArgumentException(String.format(
+	                "Sub-curve parameters out of bounds: t0=%.12f, t1=%.12f", t0, t1));
+	    }
+
+	    if (t1 <= t0 + TOL) {
+	        throw new IllegalArgumentException(String.format(
+	                "Sub-curve parameters are not increasing: t0=%.12f, t1=%.12f", t0, t1));
+	    }
+
+	    t0 = Math.max(0.0, Math.min(1.0, t0));
+	    t1 = Math.max(0.0, Math.min(1.0, t1));
+
+	    Point3D.Double q0 = (t0 <= TOL) ? p0 : getPoint(t0);
+	    Point3D.Double q1 = (t1 >= 1.0 - TOL) ? p1 : getPoint(t1);
+
+	    double newPrimePhi0 = MathUtil.normalizeAngle(primePhi0 + t0 * deltaPrimePhi);
+	    double newDeltaPrimePhi = deltaPrimePhi * (t1 - t0);
+
+	    return new GeneralCurve(q0, q1, radius, invMatrix, thetaStar,
+	            newPrimePhi0, newDeltaPrimePhi);
+	}
 	/**
 	 * Overrides {@link BaseCurve#getPoint} for efficiency: rather than computing
 	 * (θ, φ) and re-converting to Cartesian, we rotate directly from the primed
@@ -228,32 +358,6 @@ public class GeneralCurve extends BaseCurve {
 		return new Point3D.Double(xyz[0], xyz[1], xyz[2]);
 	}
 
-	/**
-	 * Returns a new {@link GeneralCurve} covering the sub-interval {@code [t0, t1]}
-	 * of this curve's parameter domain {@code [0, 1]}.
-	 *
-	 * <p>
-	 * The subrange curve shares the same face plane (same rotation matrices and θ*)
-	 * but has its φ' range rescaled to {@code [φ'(t0), φ'(t1)]}. The endpoints are
-	 * computed exactly via {@link #getPoint(double)}.
-	 * </p>
-	 *
-	 * @param t0 start of the sub-interval, in {@code [0, 1]}
-	 * @param t1 end of the sub-interval, in {@code [0, 1]}, {@code > t0}
-	 * @return the subrange curve
-	 * @throws IllegalArgumentException if {@code t0 >= t1} or either is outside
-	 *                                  {@code [0, 1]}
-	 */
-	public GeneralCurve subrange(double t0, double t1) {
-		if (t0 < 0.0 || t1 > 1.0 || t0 >= t1) {
-			throw new IllegalArgumentException(String.format("Invalid subrange [%.4f, %.4f]", t0, t1));
-		}
-		Point3D.Double newP0 = getPoint(t0);
-		Point3D.Double newP1 = getPoint(t1);
-		double newPrimePhi0 = MathUtil.normalizeAngle(primePhi0 + t0 * deltaPrimePhi);
-		double newDeltaPrimePhi = (t1 - t0) * deltaPrimePhi;
-		return new GeneralCurve(newP0, newP1, radius, invMatrix, thetaStar, newPrimePhi0, newDeltaPrimePhi);
-	}
 
 	@Override
 	public GeneralCurve reverse() {
@@ -325,8 +429,11 @@ public class GeneralCurve extends BaseCurve {
 	 *
 	 * @return list of candidate crossings with theta grid lines
 	 */
-	private List<Crossing> getThetaCrossings() {
-	    ArrayList<Crossing> crossings = new ArrayList<>();
+	public List<Crossing> getThetaCrossings() {
+		if (thetaCrossings != null) {
+			return thetaCrossings;
+		}
+	    thetaCrossings = new ArrayList<>();
 
 	    SphericalGrid grid = ChimeraApp.getInstance().getSphericalGrid();
 	    Grid1D thetaGrid = grid.getThetaGrid();
@@ -339,7 +446,7 @@ public class GeneralCurve extends BaseCurve {
 	     * artificial odd counts such as 1 or 3 at the prepatch level.
 	     */
 	    if (isConstantTheta()) {
-	        return crossings;
+	        return thetaCrossings;
 	    }
 
 	    /*
@@ -348,7 +455,7 @@ public class GeneralCurve extends BaseCurve {
 	     */
 	    for (int i = 0; i < thetaGrid.numPoints(); i++) {
 	        double targetTheta = thetaGrid.valueAt(i);
-	        addThetaCrossingsForTarget(crossings, targetTheta, i);
+	        addThetaCrossingsForTarget(thetaCrossings, targetTheta, i);
 	    }
 
 	    /*
@@ -361,10 +468,11 @@ public class GeneralCurve extends BaseCurve {
 	     *     curve 22 ends on θ_k, curve 23 starts on θ_k,
 	     *     and the boundary crosses the θ_k line at that junction.
 	     */
-	    addEndpointThetaCrossing(crossings, thetaGrid, 0.0);
-	    addEndpointThetaCrossing(crossings, thetaGrid, 1.0);
+	    addEndpointThetaCrossing(thetaCrossings, thetaGrid, 0.0);
+	    addEndpointThetaCrossing(thetaCrossings, thetaGrid, 1.0);
 
-	    return Crossing.removeDuplicates(crossings);
+	    thetaCrossings = Crossing.removeDuplicates(thetaCrossings);
+	    return thetaCrossings;
 	}	
 	
 	/**

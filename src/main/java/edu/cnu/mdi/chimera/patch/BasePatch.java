@@ -8,7 +8,6 @@ import edu.cnu.mdi.chimera.area.SphericalPolygonArea;
 import edu.cnu.mdi.chimera.curve.BaseCurve;
 import edu.cnu.mdi.chimera.curve.Crossing;
 import edu.cnu.mdi.chimera.curve.BaseCurve.PoleStatus;
-import edu.cnu.mdi.chimera.curve.CompositeCurve;
 import edu.cnu.mdi.chimera.util.MathUtil;
 import edu.cnu.mdi.chimera.util.Point3D;
 import edu.cnu.mdi.chimera.util.ThetaPhi;
@@ -68,8 +67,6 @@ public abstract class BasePatch implements Comparable<BasePatch> {
 	private Boolean _enclosesNorthPole = null;
 	private Boolean _enclosesSouthPole = null;
 
-	// A single curve made from the set of BaseCurves
-	public final CompositeCurve compositeCurve;
 
 	// -----------------------------------------------------------------------
 	// Construction
@@ -92,7 +89,6 @@ public abstract class BasePatch implements Comparable<BasePatch> {
 			throw new IllegalArgumentException("Curves do not form a closed loop for patch (" + nx + "," + ny + "," + nz
 					+ "," + nTheta + "," + nPhi + ").");
 		}
-		this.compositeCurve = new CompositeCurve(curves);
 	}
 
 	/** Convenience constructor for prepatches (nTheta = nPhi = -1). */
@@ -292,7 +288,7 @@ public abstract class BasePatch implements Comparable<BasePatch> {
 	}
 
 	public String fullIndex() {
-		return cartesianIndex() + (isFullyIndexed() ? String.format("(%d,%d)", nTheta, nPhi) : "(?,?)");
+		return String.format("(%d,%d,%d) (%d,%d)", nx, ny, nz, nTheta, nPhi);
 	}
 
 	@Override

@@ -5,8 +5,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.math3.analysis.UnivariateFunction;
-
 import edu.cnu.mdi.chimera.app.ChimeraApp;
 import edu.cnu.mdi.chimera.curve.BaseCurve;
 import edu.cnu.mdi.chimera.curve.Crossing;
@@ -51,8 +49,7 @@ public class ThetaPatch extends BasePatch {
     // ---------------------------------------------------------------------
 
     private static final double THETA_TOL = 1.0e-9;
-    private static final double ENDPOINT_TOL = 1.0e-8;
-    private static final double ENDPOINT_ARTIFACT_TOL = 1.0e-4;
+   private static final double ENDPOINT_ARTIFACT_TOL = 1.0e-4;
 
     /*
      * Loop-building tolerance must be larger than BasePatch.LOOP_TOL because
@@ -68,11 +65,6 @@ public class ThetaPatch extends BasePatch {
      */
     private static final double ON_CUT_TOL = 1.0e-8;
 
-    /*
-     * Used to snap a fragment endpoint to an exact theta grid line when the
-     * endpoint is numerically very close to one.
-     */
-    private static final double PROJECT_THETA_TOL = 1.0e-6;
 
     // ---------------------------------------------------------------------
     // Public splice entry point
@@ -100,11 +92,6 @@ public class ThetaPatch extends BasePatch {
             return result;
         }
 
-//        if (pre.polar()) {
-//            System.err.println("[ThetaPatch] polar splice with "
-//                    + numThetaCrossings + " theta crossings.");
-//            return polarSplice(pre);
-//        }
 
         if (numThetaCrossings % 2 != 0) {
             System.err.println("[ThetaPatch] Warning: odd crossing count after endpoint removal ("
@@ -296,508 +283,194 @@ public class ThetaPatch extends BasePatch {
                 .get()
                 .getKey();
     }
-
-    // ---------------------------------------------------------------------
-    // Main theta splice implementation
-    // ---------------------------------------------------------------------
-
-    /**
-     * Performs the theta splice using unordered edge assembly.
-     */
-    private static List<ThetaPatch> doSplice(
-            PrePatch pre,
+    
+    
+    // doSplice: main splice logic for prepatches with crossings. Separated out from splice() for readability.
+    private static List<ThetaPatch> doSplice(PrePatch pre,
             SphericalGrid sphGrid,
             List<Crossing> crossings) {
-
+    	
+    	boolean debug = (pre.nx == 29 && pre.ny == 15 && pre.nz == 20);
+    	
+    	if (debug) {
+			System.out.println("[ThetaPatch] doSplice: prepatch (" + pre.nx + "," + pre.ny + "," + pre.nz + ") with " + crossings.size() + " crossings:");
+			for (Crossing c : crossings) {
+				System.out.println("  " + c.summaryString());
+			}
+		}
+    	
+    	List<ThetaPatch> result = new ArrayList<>();
+    	List<BaseCurve> allCurves = new ArrayList<>();
+    	
+    	// step1: split curves at theta crossings
+    	List<BaseCurve> curves = pre.curves;
+    	for (BaseCurve curve : curves) {
+    		GeneralCurve gcurve = (GeneralCurve) curve;
+    		allCurves.addAll(gcurve.splitAtThetaCrossings());
+    	}
+    	
+    	//create back and forth theta curves for each set of matching crossings
+    	List<Crossing> remainingCrossings = new ArrayList<>(crossings);
+    	List<BaseCurve> thetaCurves = new ArrayList<>();
+    	
+    	while (!remainingCrossings.isEmpty()) {
+			Crossing c = remainingCrossings.remove(0);
+			double theta = c.value();
+			Crossing match = null;
+			
+			for (Crossing other : remainingCrossings) {
+				if (Math.abs(other.value() - theta) < THETA_TOL) {
+					match = other;
+					break;
+				}
+			}
+			
+			if (match != null) {
+				Point3D.Double p0 = c.curve().getPoint(clamp01(c.t()));
+				Point3D.Double p1 = match.curve().getPoint(clamp01(match.t()));
+				thetaCurves.add(new ThetaCurve(p0, p1, pre.radius));
+				thetaCurves.add(new ThetaCurve(p1, p0, pre.radius));
+				remainingCrossings.remove(match);
+			}
+		}
+		
+		//assemble all curves into loops and create theta patches from loops
+		allCurves.addAll(thetaCurves);
+		List<List<BaseCurve>> loops = assembleClosedLoops(allCurves, pre.nx, pre.ny, pre.nz, -1);
+		
+		for (List<BaseCurve> loop : loops) {
+			if (loop.size() < 2) {
+				continue;
+			}
+			
+			try {
+				int thetaIndex = bestThetaIndexForLoop(loop, sphGrid);
+				result.add(new ThetaPatch(loop, pre.nx, pre.ny, pre.nz, thetaIndex));
+			} catch (IllegalArgumentException ex) {
+				System.err.printf(
+						"[ThetaPatch] altDoSplice: %s%n",
+						ex.getMessage());
+			}
+		}
+    	return result;
+    }
+    
+    /**
+     * Chooses the theta-band index for a closed theta-splice loop.
+     *
+     * <p>
+     * The loop should lie entirely within one theta band, except for any
+     * {@link ThetaCurve} segments that run along theta-grid boundaries. This method
+     * samples the midpoint of each non-boundary curve and votes for the theta cell
+     * containing that midpoint. Boundary theta curves are ignored when possible
+     * because their midpoint lies on a grid line and can be assigned ambiguously to
+     * either adjacent band.
+     * </p>
+     *
+     * <p>
+     * If all curves are boundary-like, the method falls back to sampling all curve
+     * midpoints and using {@link Grid1D#locateInterval(double)}. This should be rare,
+     * but it keeps the method total.
+     * </p>
+     *
+     * @param loop    closed loop produced by theta splicing
+     * @param sphGrid spherical grid
+     * @return theta cell index for the loop
+     */
+    private static int bestThetaIndexForLoop(List<BaseCurve> loop, SphericalGrid sphGrid) {
         Grid1D thetaGrid = sphGrid.getThetaGrid();
-        double radius = pre.radius;
+        Map<Integer, Integer> counts = new HashMap<>();
 
-        ThetaBandRange range = thetaBandRange(pre, thetaGrid);
+        /*
+         * First pass: vote only with curves that are not lying on a theta cut.
+         * These are the most reliable indicators of the interior theta band.
+         */
+        for (BaseCurve curve : loop) {
+            if (curve == null) {
+                continue;
+            }
 
-        if (range.nThetaLo == range.nThetaHi) {
-            int idx = bestThetaIndex(pre, sphGrid);
-            return List.of(new ThetaPatch(pre.curves, pre.nx, pre.ny, pre.nz, idx));
+            double th0 = curve.theta(0.0);
+            double thm = curve.theta(0.5);
+            double th1 = curve.theta(1.0);
+
+            boolean onSomeCut = false;
+            for (int i = 0; i < thetaGrid.numPoints(); i++) {
+                double cut = thetaGrid.valueAt(i);
+                if (Math.abs(th0 - cut) < ON_CUT_TOL
+                        && Math.abs(thm - cut) < ON_CUT_TOL
+                        && Math.abs(th1 - cut) < ON_CUT_TOL) {
+                    onSomeCut = true;
+                    break;
+                }
+            }
+
+            if (onSomeCut) {
+                continue;
+            }
+
+            int idx = thetaGrid.locateInterval(thm);
+            if (idx >= 0) {
+                counts.merge(idx, 1, Integer::sum);
+            }
         }
 
-        int numBands = range.nThetaHi - range.nThetaLo + 1;
-        int numThetaVertices = thetaGrid.numPoints();
-
-        @SuppressWarnings("unchecked")
-        List<BaseCurve>[] bandEdges = new List[numBands];
-
-        for (int i = 0; i < numBands; i++) {
-            bandEdges[i] = new ArrayList<>();
+        if (!counts.isEmpty()) {
+            return counts.entrySet().stream()
+                    .max(Map.Entry.comparingByValue())
+                    .get()
+                    .getKey();
         }
 
         /*
-         * Pending theta-boundary connectors are tracked by both band and cut.
-         * This prevents accidentally connecting points on different theta lines.
+         * Fallback: all curves looked like theta-boundary curves. Use midpoint
+         * samples anyway, nudging exact grid-line values very slightly inward when
+         * needed.
          */
-        Point3D.Double[][] pendingExit =
-                new Point3D.Double[numBands][numThetaVertices];
-
-        Point3D.Double[][] firstEntry =
-                new Point3D.Double[numBands][numThetaVertices];
-
-        @SuppressWarnings("unchecked")
-        List<Crossing>[] crossingsByCurve = new List[pre.curves.size()];
-
-        for (int i = 0; i < crossingsByCurve.length; i++) {
-            crossingsByCurve[i] = new ArrayList<>();
-        }
-
-        for (Crossing crossing : crossings) {
-            int curveIndex = curveIndexOf(pre.curves, crossing.curve());
-            if (curveIndex >= 0) {
-                crossingsByCurve[curveIndex].add(crossing);
-            }
-        }
-
-        for (List<Crossing> list : crossingsByCurve) {
-            list.sort((a, b) -> Double.compare(a.t(), b.t()));
-        }
-
-        for (int curveIndex = 0; curveIndex < pre.curves.size(); curveIndex++) {
-            BaseCurve curve = pre.curves.get(curveIndex);
-            List<Crossing> curveCrossings = crossingsByCurve[curveIndex];
-
-            double tPrev = 0.0;
-            Crossing prevCrossing = null;
-
-            for (Crossing crossing : curveCrossings) {
-                double tCut = clamp01(crossing.t());
-
-                if (tCut - tPrev > ENDPOINT_TOL) {
-                    addFragmentEdgesToBands(
-                            bandEdges,
-                            curve,
-                            tPrev,
-                            tCut,
-                            prevCrossing,
-                            crossing,
-                            thetaGrid,
-                            range.nThetaLo,
-                            range.nThetaHi,
-                            radius);
-                }
-
-                processThetaCrossing(
-                        pre,
-                        crossing,
-                        curveIndex,
-                        thetaGrid,
-                        range.nThetaLo,
-                        range.nThetaHi,
-                        bandEdges,
-                        pendingExit,
-                        firstEntry,
-                        radius);
-
-                tPrev = tCut;
-                prevCrossing = crossing;
+        for (BaseCurve curve : loop) {
+            if (curve == null) {
+                continue;
             }
 
-            if (1.0 - tPrev > ENDPOINT_TOL) {
-                addFragmentEdgesToBands(
-                        bandEdges,
-                        curve,
-                        tPrev,
-                        1.0,
-                        prevCrossing,
-                        null,
-                        thetaGrid,
-                        range.nThetaLo,
-                        range.nThetaHi,
-                        radius);
-            }
-        }
+            double theta = curve.theta(0.5);
+            int idx = thetaGrid.locateInterval(theta);
 
-        /*
-         * Close chains that wrap around the artificial start of the original
-         * prepatch boundary traversal.
-         */
-        for (int localBand = 0; localBand < numBands; localBand++) {
-            for (int cutIndex = 0; cutIndex < numThetaVertices; cutIndex++) {
-                Point3D.Double exit = pendingExit[localBand][cutIndex];
-                Point3D.Double entry = firstEntry[localBand][cutIndex];
-
-                if (exit != null && entry != null) {
-                    double cutTheta = thetaGrid.valueAt(cutIndex);
-                    bandEdges[localBand].add(
-                            thetaConnector(exit, entry, cutTheta, radius));
-                    pendingExit[localBand][cutIndex] = null;
+            if (idx < 0) {
+                /*
+                 * Handle exact theta-grid vertices or tiny roundoff excursions.
+                 */
+                int vertex = thetaGrid.valueIsAVertex(theta);
+                if (vertex >= 0) {
+                    if (vertex == 0) {
+                        idx = 0;
+                    } else if (vertex >= thetaGrid.numPoints() - 1) {
+                        idx = thetaGrid.numCells() - 1;
+                    } else {
+                        /*
+                         * Ambiguous interior cut. Pick the lower adjacent band as a
+                         * deterministic fallback.
+                         */
+                        idx = vertex - 1;
+                    }
                 }
             }
-        }
 
-        List<ThetaPatch> result = new ArrayList<>();
-
-        for (int localBand = 0; localBand < numBands; localBand++) {
-            int globalBand = range.nThetaLo + localBand;
-
-            List<List<BaseCurve>> loops = assembleClosedLoops(
-                    bandEdges[localBand],
-                    pre.nx, pre.ny, pre.nz, globalBand);
-
-            for (List<BaseCurve> loop : loops) {
-                if (loop.size() < 2) {
-                    continue;
-                }
-
-                try {
-                    result.add(new ThetaPatch(
-                            loop, pre.nx, pre.ny, pre.nz, globalBand));
-                } catch (IllegalArgumentException ex) {
-                    System.err.printf(
-                            "[ThetaSplice] Band %d of prepatch (%d,%d,%d): %s%n",
-                            globalBand, pre.nx, pre.ny, pre.nz, ex.getMessage());
-                }
+            if (idx >= 0) {
+                counts.merge(idx, 1, Integer::sum);
             }
         }
 
-        return result;
-    }
-
-    private record ThetaBandRange(int nThetaLo, int nThetaHi) {
-    }
-
-    private static ThetaBandRange thetaBandRange(PrePatch pre, Grid1D thetaGrid) {
-        double thetaMin = Double.MAX_VALUE;
-        double thetaMax = -Double.MAX_VALUE;
-
-        for (BaseCurve curve : pre.curves) {
-            for (int s = 0; s <= 20; s++) {
-                double theta = curve.theta(s / 20.0);
-                thetaMin = Math.min(thetaMin, theta);
-                thetaMax = Math.max(thetaMax, theta);
-            }
+        if (!counts.isEmpty()) {
+            return counts.entrySet().stream()
+                    .max(Map.Entry.comparingByValue())
+                    .get()
+                    .getKey();
         }
 
-        int lo = Math.max(0, thetaGrid.locateInterval(thetaMin));
-        int hi = Math.min(thetaGrid.numCells() - 1,
-                thetaGrid.locateInterval(thetaMax));
-
-        return new ThetaBandRange(lo, hi);
+        throw new IllegalStateException("Could not determine theta index for theta-splice loop.");
     }
 
-    // ---------------------------------------------------------------------
-    // Fragment creation and band assignment
-    // ---------------------------------------------------------------------
-
-    private static void addFragmentEdgesToBands(
-            List<BaseCurve>[] bandEdges,
-            BaseCurve curve,
-            double t0,
-            double t1,
-            Crossing startCrossing,
-            Crossing endCrossing,
-            Grid1D thetaGrid,
-            int nThetaLo,
-            int nThetaHi,
-            double radius) {
-
-        if (t1 - t0 <= ENDPOINT_TOL) {
-            return;
-        }
-
-        Point3D.Double p0 = endpointPoint(
-                curve, t0, startCrossing, thetaGrid, radius);
-
-        Point3D.Double p1 = endpointPoint(
-                curve, t1, endCrossing, thetaGrid, radius);
-
-        int cutIndex = thetaCutIndexForInterval(curve, t0, t1, p0, p1, thetaGrid);
-
-        BaseCurve fragment;
-
-        if (cutIndex >= 0) {
-            double cutTheta = thetaGrid.valueAt(cutIndex);
-            fragment = thetaConnector(p0, p1, cutTheta, radius);
-
-            addEdgeToGlobalBand(
-                    bandEdges, fragment, cutIndex - 1, nThetaLo, nThetaHi);
-
-            addEdgeToGlobalBand(
-                    bandEdges, fragment, cutIndex, nThetaLo, nThetaHi);
-
-            return;
-        }
-
-        fragment = new CurveFragment(curve, t0, t1, p0, p1);
-
-        double thetaMid = curve.theta(0.5 * (t0 + t1));
-        int globalBand = thetaGrid.locateInterval(thetaMid);
-
-        addEdgeToGlobalBand(
-                bandEdges, fragment, globalBand, nThetaLo, nThetaHi);
-    }
-
-    private static void addEdgeToGlobalBand(
-            List<BaseCurve>[] bandEdges,
-            BaseCurve edge,
-            int globalBand,
-            int nThetaLo,
-            int nThetaHi) {
-
-        if (globalBand < nThetaLo || globalBand > nThetaHi) {
-            return;
-        }
-
-        bandEdges[globalBand - nThetaLo].add(edge);
-    }
-
-    private static Point3D.Double endpointPoint(
-            BaseCurve curve,
-            double t,
-            Crossing crossing,
-            Grid1D thetaGrid,
-            double radius) {
-
-        Point3D.Double raw = curve.getPoint(clamp01(t));
-
-        if (crossing != null) {
-            return projectToTheta(raw, crossing.value(), radius);
-        }
-
-        double theta = thetaOf(raw);
-        int nearest = nearestThetaVertex(thetaGrid, theta, PROJECT_THETA_TOL);
-
-        if (nearest >= 0) {
-            return projectToTheta(raw, thetaGrid.valueAt(nearest), radius);
-        }
-
-        return raw;
-    }
-
-    private static int thetaCutIndexForInterval(
-            BaseCurve curve,
-            double t0,
-            double t1,
-            Point3D.Double p0,
-            Point3D.Double p1,
-            Grid1D thetaGrid) {
-
-        double tm = 0.5 * (t0 + t1);
-        double th0 = thetaOf(p0);
-        double thm = curve.theta(tm);
-        double th1 = thetaOf(p1);
-
-        for (int i = 0; i < thetaGrid.numPoints(); i++) {
-            double cut = thetaGrid.valueAt(i);
-
-            if (Math.abs(th0 - cut) < ON_CUT_TOL
-                    && Math.abs(thm - cut) < ON_CUT_TOL
-                    && Math.abs(th1 - cut) < ON_CUT_TOL) {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    private static int nearestThetaVertex(
-            Grid1D thetaGrid, double theta, double tolerance) {
-
-        int bestIndex = -1;
-        double bestDiff = Double.MAX_VALUE;
-
-        for (int i = 0; i < thetaGrid.numPoints(); i++) {
-            double diff = Math.abs(thetaGrid.valueAt(i) - theta);
-            if (diff < bestDiff) {
-                bestDiff = diff;
-                bestIndex = i;
-            }
-        }
-
-        return (bestDiff <= tolerance) ? bestIndex : -1;
-    }
-
-    // ---------------------------------------------------------------------
-    // Crossing processing and theta connectors
-    // ---------------------------------------------------------------------
-
-    private static void processThetaCrossing(
-            PrePatch pre,
-            Crossing crossing,
-            int curveIndex,
-            Grid1D thetaGrid,
-            int nThetaLo,
-            int nThetaHi,
-            List<BaseCurve>[] bandEdges,
-            Point3D.Double[][] pendingExit,
-            Point3D.Double[][] firstEntry,
-            double radius) {
-
-        int cutIndex = crossing.index();
-        double cutTheta = crossing.value();
-
-        SideSample before = sampleBeforeCrossing(
-                pre.curves, curveIndex, crossing.t(), cutTheta);
-
-        SideSample after = sampleAfterCrossing(
-                pre.curves, curveIndex, crossing.t(), cutTheta);
-
-        if (!before.valid || !after.valid) {
-            return;
-        }
-
-        int beforeBand = sideToGlobalBand(before, cutIndex, thetaGrid);
-        int afterBand = sideToGlobalBand(after, cutIndex, thetaGrid);
-
-        if (beforeBand == afterBand) {
-            return;
-        }
-
-        Point3D.Double point = projectToTheta(
-                crossing.curve().getPoint(clamp01(crossing.t())),
-                cutTheta,
-                radius);
-
-        recordExit(
-                beforeBand,
-                cutIndex,
-                point,
-                nThetaLo,
-                nThetaHi,
-                pendingExit);
-
-        recordEntry(
-                afterBand,
-                cutIndex,
-                point,
-                nThetaLo,
-                nThetaHi,
-                bandEdges,
-                pendingExit,
-                firstEntry,
-                thetaGrid,
-                radius);
-    }
-
-    private static void recordExit(
-            int globalBand,
-            int cutIndex,
-            Point3D.Double point,
-            int nThetaLo,
-            int nThetaHi,
-            Point3D.Double[][] pendingExit) {
-
-        if (globalBand < nThetaLo || globalBand > nThetaHi) {
-            return;
-        }
-
-        pendingExit[globalBand - nThetaLo][cutIndex] = point;
-    }
-
-    private static void recordEntry(
-            int globalBand,
-            int cutIndex,
-            Point3D.Double point,
-            int nThetaLo,
-            int nThetaHi,
-            List<BaseCurve>[] bandEdges,
-            Point3D.Double[][] pendingExit,
-            Point3D.Double[][] firstEntry,
-            Grid1D thetaGrid,
-            double radius) {
-
-        if (globalBand < nThetaLo || globalBand > nThetaHi) {
-            return;
-        }
-
-        int localBand = globalBand - nThetaLo;
-
-        if (pendingExit[localBand][cutIndex] != null) {
-            Point3D.Double exit = pendingExit[localBand][cutIndex];
-            double cutTheta = thetaGrid.valueAt(cutIndex);
-
-            bandEdges[localBand].add(
-                    thetaConnector(exit, point, cutTheta, radius));
-
-            pendingExit[localBand][cutIndex] = null;
-        } else if (firstEntry[localBand][cutIndex] == null) {
-            firstEntry[localBand][cutIndex] = point;
-        }
-    }
-
-    private static SideSample sampleBeforeCrossing(
-            List<BaseCurve> curves,
-            int curveIndex,
-            double t,
-            double cut) {
-
-        final double probe = 0.02;
-        BaseCurve curve = curves.get(curveIndex);
-
-        if (t > ENDPOINT_ARTIFACT_TOL) {
-            double dt = Math.min(probe, 0.5 * t);
-            double theta = curve.theta(t - dt);
-
-            if (Math.abs(theta - cut) >= THETA_TOL) {
-                return new SideSample(true, theta > cut);
-            }
-        }
-
-        return sampleBeforeJunction(curves, curveIndex, cut, probe);
-    }
-
-    private static SideSample sampleAfterCrossing(
-            List<BaseCurve> curves,
-            int curveIndex,
-            double t,
-            double cut) {
-
-        final double probe = 0.02;
-        BaseCurve curve = curves.get(curveIndex);
-
-        if (t < 1.0 - ENDPOINT_ARTIFACT_TOL) {
-            double dt = Math.min(probe, 0.5 * (1.0 - t));
-            double theta = curve.theta(t + dt);
-
-            if (Math.abs(theta - cut) >= THETA_TOL) {
-                return new SideSample(true, theta > cut);
-            }
-        }
-
-        return sampleAfterJunction(
-                curves, (curveIndex + 1) % curves.size(), cut, probe);
-    }
-
-    private static int sideToGlobalBand(
-            SideSample side, int cutIndex, Grid1D thetaGrid) {
-
-        int band = side.above ? cutIndex : cutIndex - 1;
-        return Math.max(0, Math.min(thetaGrid.numCells() - 1, band));
-    }
-
-    private static ThetaCurve thetaConnector(
-            Point3D.Double p0,
-            Point3D.Double p1,
-            double theta,
-            double radius) {
-
-        Point3D.Double q0 = projectToTheta(p0, theta, radius);
-        Point3D.Double q1 = projectToTheta(p1, theta, radius);
-        return new ThetaCurve(q0, q1, radius);
-    }
-
-    private static Point3D.Double projectToTheta(
-            Point3D.Double p, double theta, double radius) {
-
-        double phi = Math.atan2(p.y, p.x);
-        double sinTheta = Math.sin(theta);
-
-        return new Point3D.Double(
-                radius * sinTheta * Math.cos(phi),
-                radius * sinTheta * Math.sin(phi),
-                radius * Math.cos(theta));
-    }
-
-    private static double thetaOf(Point3D.Double p) {
-        double r = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
-        return Math.acos(Math.max(-1.0, Math.min(1.0, p.z / r)));
-    }
-
+ 
     // ---------------------------------------------------------------------
     // Closed-loop assembly
     // ---------------------------------------------------------------------
@@ -905,93 +578,5 @@ public class ThetaPatch extends BasePatch {
         return Math.max(0.0, Math.min(1.0, t));
     }
 
-    // ---------------------------------------------------------------------
-    // Polar placeholder
-    // ---------------------------------------------------------------------
 
-    private static List<ThetaPatch> polarSplice(PrePatch pre) {
-        /*
-         * Polar theta splicing is a separate special case. Returning an empty
-         * list preserves the current behavior better than attempting a general
-         * splice through a pole.
-         */
-        return List.of();
-    }
-
-    // ---------------------------------------------------------------------
-    // Internal curve fragment wrapper
-    // ---------------------------------------------------------------------
-
-    /**
-     * A directed subrange of another curve, with explicitly supplied endpoints.
-     *
-     * <p>The explicit endpoints are important during theta splicing because
-     * crossing points are projected onto exact theta grid lines. The interior
-     * of the fragment follows the source curve, but its endpoints match the
-     * projected connector points exactly, allowing robust loop assembly.</p>
-     */
-    private static final class CurveFragment extends BaseCurve {
-
-        private final BaseCurve source;
-        private final double t0;
-        private final double t1;
-
-        CurveFragment(BaseCurve source,
-                      double t0,
-                      double t1,
-                      Point3D.Double p0,
-                      Point3D.Double p1) {
-            super(p0, p1, source.radius);
-            this.source = source;
-            this.t0 = t0;
-            this.t1 = t1;
-        }
-
-        @Override
-        public UnivariateFunction getThetaFunction() {
-            return t -> thetaOf(getPoint(t));
-        }
-
-        @Override
-        public UnivariateFunction getPhiFunction() {
-            return t -> {
-                Point3D.Double p = getPoint(t);
-                return Math.atan2(p.y, p.x);
-            };
-        }
-
-        @Override
-        public Point3D.Double getPoint(double t) {
-            if (t <= 0.0) {
-                return p0;
-            }
-            if (t >= 1.0) {
-                return p1;
-            }
-
-            double sourceT = t0 + t * (t1 - t0);
-            return source.getPoint(sourceT);
-        }
-
-        @Override
-        public BaseCurve reverse() {
-            return new CurveFragment(source, t1, t0, p1, p0);
-        }
-
-        @Override
-        public boolean isConstantTheta() {
-            double th0 = theta(0.0);
-            double thm = theta(0.5);
-            double th1 = theta(1.0);
-            double min = Math.min(th0, Math.min(thm, th1));
-            double max = Math.max(th0, Math.max(thm, th1));
-            return (max - min) < THETA_TOL;
-        }
-
-        @Override
-        public String toString() {
-            return String.format("CurveFragment[source=%d t0=%.6f t1=%.6f]",
-                    source.curveId, t0, t1);
-        }
-    }
 }

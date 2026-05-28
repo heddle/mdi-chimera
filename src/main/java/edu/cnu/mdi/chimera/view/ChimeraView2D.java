@@ -21,6 +21,7 @@ import edu.cnu.mdi.chimera.mc.MonteCarloPoint;
 import edu.cnu.mdi.chimera.model.ChimeraModel;
 import edu.cnu.mdi.chimera.patch.BasePatch;
 import edu.cnu.mdi.chimera.patch.PrePatch;
+import edu.cnu.mdi.chimera.patch.ThetaPatch;
 import edu.cnu.mdi.component.OptionPanel;
 import edu.cnu.mdi.container.IContainer;
 import edu.cnu.mdi.graphics.style.LineStyle;
@@ -40,16 +41,16 @@ import edu.cnu.mdi.util.PropertyUtils;
 import edu.cnu.mdi.util.UnicodeUtils;
 
 @SuppressWarnings("serial")
-public class ChimeraView2D extends MapView2D implements OptionPanel.OptionPanelListener,
-ColorMapSelectorPanel.ColorMapChangeListener {
+public class ChimeraView2D extends MapView2D
+		implements OptionPanel.OptionPanelListener, ColorMapSelectorPanel.ColorMapChangeListener {
 	// Constant for π/2, used in projection calculations.
 	private final double PIOVER2 = Math.PI / 2.0;
 
-	// Threshold for snapping points to the poles when checking for pole 
+	// Threshold for snapping points to the poles when checking for pole
 	// involvement in patch classification. This is a
-	// visualization-only tolerance, not a geometric alteration of stored patch geometry.
+	// visualization-only tolerance, not a geometric alteration of stored patch
+	// geometry.
 	private static final double ANGULAR_SNAP_TOL = 1.0e-5;
-	
 
 	/** for theta index display in feedback */
 	public static final String NTHETA = "n" + UnicodeUtils.SMALL_THETA;
@@ -60,15 +61,20 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 	// Reusable point for projection calculations to avoid unnecessary object
 	// creation.
 	private int[] indexArray = new int[5];
-	
+
 	private static final Color preLineColor = X11Colors.getX11Color("red");
 	private static final Color preFillColor = X11Colors.getX11Color("red", 64);
 	private static final Color thetaLineColor = X11Colors.getX11Color("dark green");
 	private static final Color thetaFillColor = X11Colors.getX11Color("dark green", 64);
-	
-	//for hover highlighting of patches. This is not a model property because it's purely visual and transient.
-	private BasePatch highlightedPrePatch = null;
 
+	private static final Color PATCH_FILL = X11Colors.getX11Color("yellow", 64);
+
+	// for hover highlighting of patches. This is not a model property because it's
+	// purely visual and transient.
+	private BasePatch highlightedPatch = null;
+	
+	
+	
 
 	/** Shared Chimera model. */
 	private final ChimeraModel model;
@@ -78,7 +84,7 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 
 	/** Dot size for Monte Carlo points, in pixels. */
 	private int monteCarloDotSize = 2;
-		
+
 	// the dsplay options panel
 	private final ChimeraOptionPanel optionPanel;
 
@@ -89,27 +95,24 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 	 * @throws NullPointerException if the model is null
 	 */
 	public ChimeraView2D(ChimeraModel model) {
-		super(PropertyUtils.TITLE, "Chimera 2D", 
-				PropertyUtils.FRACTION, 0.78, 
-				PropertyUtils.ASPECT, 1.1,
+		super(PropertyUtils.TITLE, "Chimera 2D", PropertyUtils.FRACTION, 0.78, PropertyUtils.ASPECT, 1.1,
 				PropertyUtils.TOOLBARBITS, (ToolBits.MAPTOOLS | ToolBits.ZOOMTOOLS) & ~ToolBits.STATUS);
-		
+
 		Objects.requireNonNull(model, "model must not be null.");
 		this.model = model;
-		
+
 		/*
 		 * These calls are intentionally made after super(...) returns, avoiding the
 		 * superclass-constructor override/lifecycle problem.
 		 */
 		setMapControlPanel(new ChimeraMapControlPanel(this));
-		
+
 		ChimeraSidePanel sidePanel = new ChimeraSidePanel(this, monteCarloColorMap, this);
 		addCustomSidePanelComponent(sidePanel);
 		optionPanel = sidePanel.optionPanel;
-		
-		
+
 		setProjection(new ArchimedesLambertCylindricalProjection(getCurrentMapTheme()));
-		
+
 		model.addModelChangedListener(event -> {
 			System.out.println("Model changed: " + event.getType());
 
@@ -125,13 +128,13 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 		});
 		pack();
 	}
-	
+
 	// Redraw when the grid changes or options change
 	private void gridChange() {
 		Log.getInstance().config("Grid changed ");
 		refresh();
 	}
-	
+
 	/**
 	 * Override to draw custom map rendering
 	 */
@@ -147,12 +150,12 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 			// Draw theta lines (latitudes, sort of)
 			drawThetaLines(g, container);
 		}
-		
+
 		// Draw Kiss markers if enabled
 		if (optionPanel.showKissMarkers()) {
 			drawKissMarkers(g, container);
 		}
-		
+
 		ChimeraAlgorithmResult result = model.getAlgorithmResult();
 		if (result != null) {
 			if (optionPanel.showThetaPatches()) {
@@ -162,18 +165,23 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 				drawPatchList(g, container, result.getPrePatches(), preFillColor, preLineColor);
 			}
 		}
-		
-		
-		if (highlightedPrePatch != null) {
-			System.out.println("Highlighting patch: " + highlightedPrePatch);
-			DrawPatch.drawPatch(g, (MapContainer)container, highlightedPrePatch, Color.YELLOW, Color.ORANGE, 3.0f, LineStyle.SOLID);
+
+		if (highlightedPatch != null) {
+			System.out.println("Highlighting patch: " + highlightedPatch);
+			DrawPatch.drawPatch(g, (MapContainer) container, highlightedPatch, PATCH_FILL, Color.RED, 1.5f,
+					LineStyle.SOLID);
+
+			if (highlightedPatch instanceof PrePatch) {
+				PrePatch prePatch = (PrePatch) highlightedPatch;
+				DrawPatch.drawThetaCrossings(g, (MapContainer) container, prePatch);
+			}
 		}
 	}
 
-	// Draw a list of patches with specified fill and line colors. 
+	// Draw a list of patches with specified fill and line colors.
 	// This is used for prepatches, theta patches, and phi patches.
-	private void drawPatchList(Graphics2D g, IContainer container, List<? extends BasePatch> patches, 
-			Color fillColor, Color lineColor) {
+	private void drawPatchList(Graphics2D g, IContainer container, List<? extends BasePatch> patches, Color fillColor,
+			Color lineColor) {
 		if (patches == null) {
 			return;
 		}
@@ -186,19 +194,19 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 				DrawPatch.drawPatch(g, mapContainer, patch, fillColor, lineColor, 1.5f, LineStyle.SOLID);
 		}
 	}
-	
-	// Draw markers for cells identified as "Kiss" cells by the algorithm, 
+
+	// Draw markers for cells identified as "Kiss" cells by the algorithm,
 	// if the option is enabled.
 	private void drawKissMarkers(Graphics2D g, IContainer container) {
 		if (!optionPanel.showKissMarkers()) {
 			return;
 		}
-		
+
 		ChimeraAlgorithmResult result = model.getAlgorithmResult();
 		if (result == null || result.getKissCells() == null) {
 			return;
 		}
-		
+
 		List<Cell> kissCells = result.getKissCells();
 		for (Cell cell : kissCells) {
 			KissGeometry kissGeometry = cell.getKissGeometry();
@@ -263,7 +271,7 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 		}
 
 	}
-	
+
 	// method to draw theta lines (latitudes) on the map.
 	private void drawThetaLines(Graphics2D g, IContainer container) {
 		SphericalGrid grid = model.getGridSpec().getSphericalGrid();
@@ -288,13 +296,13 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 		}
 	}
 
-
 	// Override to disable standard graticules (latitude/longitude lines) if
 	// desired.
 	@Override
 	protected boolean useStandardGraticules() {
 		return false; // Disable standard graticules to avoid cluttering the map
 	}
+
 	/**
 	 * Override to set a custom side panel width suitable for controls.
 	 *
@@ -304,20 +312,17 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 	protected int getSidePanelWidth() {
 		return 300;
 	}
-	
+
 	@Override
 	protected boolean includeShapeFileMenu() {
 		return false;
 	}
 
-
-
-	//callback for display toggles
+	// callback for display toggles
 	@Override
 	public void optionStateChanged(OptionPanel source, String label, boolean selected) {
 		refresh();
 	}
-
 
 	@Override
 	public void colorMapChanged(ColorMapSelectorPanel source, ScientificColorMap map) {
@@ -325,7 +330,6 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 		refresh();
 	}
 
-	
 	/**
 	 * Gets feedback strings for the current mouse position, including GSM
 	 * coordinates and grid indices.
@@ -358,84 +362,89 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 
 			feedbackStrings.add(polarStr);
 			feedbackStrings.add(carStr);
-			
+
 			model.getGridSpec().getPatchIndices(Math.toRadians(gsmTheta), Math.toRadians(gsmPhi), r, indexArray);
 			feedbackStrings.add(String.format("nx=%d, ny=%d" + ", nz=%d, %s=%d, %s=%d", indexArray[0], indexArray[1],
 					indexArray[2], NTHETA, indexArray[3], NPHI, indexArray[4]));
 
-			
 			addGridFeedback(container, pp, wp, feedbackStrings);
 			addMonteCarloFeedback(container, pp, wp, feedbackStrings);
 			addPatchFeedback(container, pp, wp, feedbackStrings);
 			algorithmFeedback(container, pp, wp, feedbackStrings);
 		}
 	}
-	
+
 	// Add feedback about the Cartesian and spherical grids
 	private void addGridFeedback(IContainer container, Point pp, Point2D.Double wp, List<String> feedbackStrings) {
 		String colorPrefix = "$coral$";
 		CartesianGrid cgrid = model.getGridSpec().getCartesianGrid();
 		SphericalGrid sgrid = model.getGridSpec().getSphericalGrid();
-		
+
 		ArrayList<String> cgridFeedback = cgrid.feedbackStrings();
 		for (String s : cgridFeedback) {
 			feedbackStrings.add(colorPrefix + s);
 		}
-		
+
 		ArrayList<String> sgridFeedback = sgrid.feedbackStrings();
 		for (String s : sgridFeedback) {
 			feedbackStrings.add(colorPrefix + s);
 		}
-		
+
 	}
-	
+
 	// Add feedback about MonteCarlo points
-	private void addMonteCarloFeedback(IContainer container, Point pp, Point2D.Double wp, List<String> feedbackStrings) {
+	private void addMonteCarloFeedback(IContainer container, Point pp, Point2D.Double wp,
+			List<String> feedbackStrings) {
 		String colorPrefix = "$wheat$";
 		int mcCount = model.getMonteCarloPointCount();
 		feedbackStrings.add(colorPrefix + "Monte Carlo points: " + mcCount);
 	}
 
-	// Add feedback about patches, such as the most relevant patch at the mouse location and its area estimate.
+	// Add feedback about patches, such as the most relevant patch at the mouse
+	// location and its area estimate.
 	private void addPatchFeedback(IContainer container, Point pp, Point2D.Double wp, List<String> feedbackStrings) {
 		String colorPrefix = "$powder blue$";
-		
-		//which do we show? Show most important
+
+		// which do we show? Show most important
 		// that have a shown flag.
-		
-		List<PrePatch> prePatches = model.getAlgorithmResult().getPrePatches();
-		int nx = indexArray[0];
-		int ny = indexArray[1];
-		int nz = indexArray[2];
-		int ntheta = indexArray[3];
-		int nphi = indexArray[4];
-		
+
+
 		BasePatch patch = getHotPatch(container, pp, wp);
-		
+
 		if (patch != null) {
 			feedbackStrings.add(colorPrefix + patch);
 			feedbackStrings.add(colorPrefix + String.format("Area estimate: %.8f", patch.areaEstimate()));
 		}
 	}
-	
-	// Get the most relevant patch at the mouse location, if any. This is used for hover highlighting and feedback.
+
+	// Get the most relevant patch at the mouse location, if any. This is used for
+	// hover highlighting and feedback.
 	private BasePatch getHotPatch(IContainer container, Point pp, Point2D.Double wp) {
 		int nx = indexArray[0];
 		int ny = indexArray[1];
 		int nz = indexArray[2];
 		int ntheta = indexArray[3];
 		int nphi = indexArray[4];
+		BasePatch patch = null;
+		
+//		List<ThetaPatch> thetaPatches = model.getAlgorithmResult().getThetaPatches();
+//		if (thetaPatches != null && !thetaPatches.isEmpty()) {
+//			patch = BasePatch.fromSortedList(thetaPatches, nx, ny, nz, ntheta, -1);
+//		}
+//
+//		if (patch != null)
+//			return patch;
 		
 		List<PrePatch> prePatches = model.getAlgorithmResult().getPrePatches();
-		
-		BasePatch patch = null;
+
 		if (prePatches != null && !prePatches.isEmpty()) {
 			patch = BasePatch.fromSortedList(prePatches, nx, ny, nz, -1, -1);
-		} 
+		}
 		return patch;
 	}
 
-	// Add feedback from the algorithm result, such as patch classifications and summaries.
+	// Add feedback from the algorithm result, such as patch classifications and
+	// summaries.
 	private void algorithmFeedback(IContainer container, Point pp, Point2D.Double wp, List<String> feedbackStrings) {
 		ChimeraAlgorithmResult result = model.getAlgorithmResult();
 		if (result != null) {
@@ -450,16 +459,15 @@ ColorMapSelectorPanel.ColorMapChangeListener {
 		MapContainer container = (MapContainer) getIContainer();
 		HoverInfoWindow win = container.getHoverWindow();
 		System.out.println("Hover update at " + pp);
-		highlightedPrePatch = getHotPatch(container, pp, null);
-		refresh();
-	}
-	
-	@Override
-	public void hoverClosed(HoverEvent he) {
-		System.out.println("Hover closed");
-		highlightedPrePatch = null;
+		highlightedPatch = getHotPatch(container, pp, null);
 		refresh();
 	}
 
+	@Override
+	public void hoverClosed(HoverEvent he) {
+		System.out.println("Hover closed");
+		highlightedPatch = null;
+		refresh();
+	}
 
 }

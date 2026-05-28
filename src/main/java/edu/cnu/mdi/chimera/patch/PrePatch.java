@@ -129,9 +129,11 @@ public class PrePatch extends BasePatch {
             // Get three corners of that face to define its plane.
             Point3D.Double[] faceCorners = getFaceCorners(cellCorners, faceIndex);
 
-            curves.add(new GeneralCurve(
-                    p0, p1, ChimeraApp.getInstance().getRadius(),
-                    faceCorners[0], faceCorners[1], faceCorners[2]));
+            GeneralCurve curve = new GeneralCurve(
+					p0, p1, ChimeraApp.getInstance().getRadius(),
+					faceCorners[0], faceCorners[1], faceCorners[2]);
+            curve.getThetaCrossings(); // precompute theta crossings for diagnostics
+            curves.add(curve);
         }
 
         return new PrePatch(curves, cell.nx, cell.ny, cell.nz);
