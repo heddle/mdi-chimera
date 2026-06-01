@@ -2,6 +2,7 @@ package edu.cnu.mdi.chimera.patch;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -285,76 +286,216 @@ public class ThetaPatch extends BasePatch {
     }
     
     
-    // doSplice: main splice logic for prepatches with crossings. Separated out from splice() for readability.
+    // doSplice: main splice logic for prepatches with crossings. 
+    //Separated out from splice() for readability.
     private static List<ThetaPatch> doSplice(PrePatch pre,
             SphericalGrid sphGrid,
             List<Crossing> crossings) {
+ 
     	
-    	boolean debug = (pre.nx == 29 && pre.ny == 15 && pre.nz == 20);
+   	boolean debug = (pre.nx == 16 && pre.ny == 16 && pre.nz == 30);
     	
     	if (debug) {
 			System.out.println("[ThetaPatch] doSplice: prepatch (" + pre.nx + "," + pre.ny + "," + pre.nz + ") with " + crossings.size() + " crossings:");
 			for (Crossing c : crossings) {
 				System.out.println("  " + c.summaryString());
 			}
+			System.out.println();
 		}
-    	
+  
+  	
     	List<ThetaPatch> result = new ArrayList<>();
     	List<BaseCurve> allCurves = new ArrayList<>();
     	
-    	// step1: split curves at theta crossings
+    	// step 1: split curves at theta crossings
     	List<BaseCurve> curves = pre.curves;
     	for (BaseCurve curve : curves) {
     		GeneralCurve gcurve = (GeneralCurve) curve;
     		allCurves.addAll(gcurve.splitAtThetaCrossings());
     	}
     	
-    	//create back and forth theta curves for each set of matching crossings
+    	if (debug) {
+    	    System.out.println("[doSplice] After split, allCurves:");
+    	    for (BaseCurve curve : allCurves) {
+    	        System.out.printf("  %s  theta0=%.4f thetaMid=%.4f theta1=%.4f%n",
+    	                curve.shortString(),
+    	                Math.toDegrees(curve.theta(0.0)),
+    	                Math.toDegrees(curve.theta(0.5)),
+    	                Math.toDegrees(curve.theta(1.0)));
+    	    }
+    	    System.out.println("[doSplice] Crossings:");
+    	    for (Crossing cx : crossings) {
+    	        System.out.println("  " + cx.summaryString());
+    	    }
+    	}
+    	
+    	// step 2: create back and forth theta curves for each set of matching crossings.
+    	// For each crossing, we find the closest unmatched crossing at the same theta value
+    	// (within THETA_TOL), measured by great-circle distance. This ensures correct pairing
+    	// when there are more than two crossings at the same theta (e.g. four crossings:
+    	// we want nearest-neighbor pairs rather than arbitrary first-found pairs).
     	List<Crossing> remainingCrossings = new ArrayList<>(crossings);
     	List<BaseCurve> thetaCurves = new ArrayList<>();
-    	
+
     	while (!remainingCrossings.isEmpty()) {
-			Crossing c = remainingCrossings.remove(0);
-			double theta = c.value();
-			Crossing match = null;
-			
-			for (Crossing other : remainingCrossings) {
-				if (Math.abs(other.value() - theta) < THETA_TOL) {
-					match = other;
-					break;
+    	    Crossing c = remainingCrossings.remove(0);
+    	    double theta = c.value();
+
+    	    // Find the closest unmatched crossing at the same theta value
+    	    Crossing match = null;
+    	    double bestDist = Double.MAX_VALUE;
+    	    for (Crossing other : remainingCrossings) {
+    	        if (Math.abs(other.value() - theta) < THETA_TOL) {
+    	            double dist = c.distanceTo(other);
+    	            if (dist < bestDist) {
+    	                bestDist = dist;
+    	                match = other;
+    	            }
+    	        }
+    	    }
+
+    	    if (match != null) {
+    	        Point3D.Double p0 = c.curve().getPoint(clamp01(c.t()));
+    	        Point3D.Double p1 = match.curve().getPoint(clamp01(match.t()));
+    	        thetaCurves.add(new ThetaCurve(p0, p1, pre.radius));
+    	        thetaCurves.add(new ThetaCurve(p1, p0, pre.radius));
+    	        remainingCrossings.remove(match);
+    	    }
+    	}
+
+    	// step 3: assemble all curves into loops and create theta patches from loops
+    	
+    	
+    	while (!allCurves.isEmpty()) {
+    	    BaseCurve c = allCurves.remove(0);
+    	    List<BaseCurve> patchCurves = new ArrayList<>();
+    	    patchCurves.add(c);
+    	    boolean madeLoop = false;
+
+    	    while (!madeLoop) {
+
+    	        //get the next connected curve, preferring theta curves
+    	        boolean connected = false;
+    	        
+    	        boolean isTheta = (c instanceof ThetaCurve);
+
+				// Check theta curves first (if this is not a theta curve)
+				if (!isTheta) {
+					Iterator<BaseCurve> thetaIt = thetaCurves.iterator();
+					while (thetaIt.hasNext()) {
+						BaseCurve theta = thetaIt.next();
+						if (connects(c, theta)) {
+							patchCurves.add(theta);
+							thetaIt.remove();
+							c = theta;
+							connected = true;
+							break;
+						}
+					}
 				}
-			}
-			
-			if (match != null) {
-				Point3D.Double p0 = c.curve().getPoint(clamp01(c.t()));
-				Point3D.Double p1 = match.curve().getPoint(clamp01(match.t()));
-				thetaCurves.add(new ThetaCurve(p0, p1, pre.radius));
-				thetaCurves.add(new ThetaCurve(p1, p0, pre.radius));
-				remainingCrossings.remove(match);
-			}
+
+    	        // If not connected, check remaining curves
+    	        if (!connected) {
+    	            Iterator<BaseCurve> allIt = allCurves.iterator();
+    	            while (allIt.hasNext()) {
+    	                BaseCurve other = allIt.next();
+    	                if (connects(c, other)) {
+    	                    patchCurves.add(other);
+    	                    allIt.remove();
+    	                    c = other;
+    	                    connected = true;
+    	                    break;
+    	                }
+    	            }
+    	        }
+
+    	        if (!connected) {
+    	            System.err.printf(
+    	                    "[ThetaPatch] doSplice: could not connect curve %s in prepatch "
+    	                            + "(%d,%d,%d) with %d crossings%n",
+    	                    c.shortString(), pre.nx, pre.ny, pre.nz, crossings.size());
+    	            break;
+    	        }
+
+    	        //have we completed a loop
+    	        madeLoop = makesLoop(patchCurves);
+    	        if (madeLoop) {
+    	            try {
+    	                int thetaIndex = bestThetaIndexForLoop(patchCurves, sphGrid);
+    	                ThetaPatch patch = new ThetaPatch(patchCurves, pre.nx, pre.ny, pre.nz, thetaIndex);
+                        ThetaPatch reversed = reverseCurves(patch);
+    	                result.add(reversed);
+    	            } catch (IllegalArgumentException ex) {
+    	                System.err.printf(
+    	                        "[ThetaPatch] doSplice: %s%n",
+    	                        ex.getMessage());
+    	            }
+    	        }
+    	    }
+    	}
+
+		return result;
+
+	}
+  
+    // Checks whether the given curves form a closed loop by comparing the 
+    //start of the first curve and the end of the last curve.
+    private static boolean makesLoop(List<BaseCurve> curves) {
+		if (curves.isEmpty()) {
+			return false;
 		}
-		
-		//assemble all curves into loops and create theta patches from loops
-		allCurves.addAll(thetaCurves);
-		List<List<BaseCurve>> loops = assembleClosedLoops(allCurves, pre.nx, pre.ny, pre.nz, -1);
-		
-		for (List<BaseCurve> loop : loops) {
-			if (loop.size() < 2) {
-				continue;
-			}
-			
-			try {
-				int thetaIndex = bestThetaIndexForLoop(loop, sphGrid);
-				result.add(new ThetaPatch(loop, pre.nx, pre.ny, pre.nz, thetaIndex));
-			} catch (IllegalArgumentException ex) {
-				System.err.printf(
-						"[ThetaPatch] altDoSplice: %s%n",
-						ex.getMessage());
-			}
-		}
-    	return result;
+
+		Point3D.Double start = curves.get(0).p0;
+		Point3D.Double end = curves.get(curves.size() - 1).p1;
+
+		return pointsClose(start, end);
     }
     
+    // Checks whether the end of c1 and the start of c2 are close enough 
+    // to be considered connected.
+    private static boolean connects(BaseCurve c1, BaseCurve c2) {
+ 		Point3D.Double c1End = c1.p1;
+		Point3D.Double c2Start = c2.p0;
+		
+		return  pointsClose(c1End, c2Start);
+    	
+    }
+    
+ 
+    // Reverses the direction of all curves in the patch and reverses their order to maintain connectivity.
+    private static ThetaPatch reverseCurves(ThetaPatch patch) {
+        if (patch == null) {
+            throw new IllegalArgumentException("Cannot reverse a null ThetaPatch.");
+        }
+
+        List<BaseCurve> reversed = new ArrayList<>(patch.curves.size());
+
+        /*
+         * If the original loop is:
+         *
+         *   c0: p0 -> p1
+         *   c1: p1 -> p2
+         *   c2: p2 -> p3
+         *   ...
+         *   cn: pn -> p0
+         *
+         * then the reversed loop must be:
+         *
+         *   cn.reverse(): p0 -> pn
+         *   ...
+         *   c2.reverse(): p3 -> p2
+         *   c1.reverse(): p2 -> p1
+         *   c0.reverse(): p1 -> p0
+         *
+         * Reversing each curve without reversing the list order does not preserve
+         * connectivity.
+         */
+        for (int i = patch.curves.size() - 1; i >= 0; i--) {
+            reversed.add(patch.curves.get(i).reverse());
+        }
+
+        return new ThetaPatch(reversed, patch.nx, patch.ny, patch.nz, patch.nTheta);
+    }   
     /**
      * Chooses the theta-band index for a closed theta-splice loop.
      *
@@ -471,95 +612,6 @@ public class ThetaPatch extends BasePatch {
     }
 
  
-    // ---------------------------------------------------------------------
-    // Closed-loop assembly
-    // ---------------------------------------------------------------------
-
-    private static List<List<BaseCurve>> assembleClosedLoops(
-            List<BaseCurve> edges,
-            int nx,
-            int ny,
-            int nz,
-            int nTheta) {
-
-        List<List<BaseCurve>> loops = new ArrayList<>();
-        List<BaseCurve> unused = new ArrayList<>(edges);
-
-        while (!unused.isEmpty()) {
-            List<BaseCurve> loop = new ArrayList<>();
-
-            BaseCurve first = unused.remove(0);
-            loop.add(first);
-
-            Point3D.Double start = first.p0;
-            Point3D.Double end = first.p1;
-
-            boolean closed = false;
-
-            while (!unused.isEmpty()) {
-                if (pointsClose(end, start)) {
-                    closed = true;
-                    break;
-                }
-
-                int matchIndex = -1;
-                boolean reverse = false;
-
-                for (int i = 0; i < unused.size(); i++) {
-                    BaseCurve candidate = unused.get(i);
-
-                    if (pointsClose(end, candidate.p0)) {
-                        matchIndex = i;
-                        reverse = false;
-                        break;
-                    }
-
-                    if (pointsClose(end, candidate.p1)) {
-                        matchIndex = i;
-                        reverse = true;
-                        break;
-                    }
-                }
-
-                if (matchIndex < 0) {
-                    break;
-                }
-
-                BaseCurve next = unused.remove(matchIndex);
-                if (reverse) {
-                    next = next.reverse();
-                }
-
-                loop.add(next);
-                end = next.p1;
-            }
-
-            if (!closed && pointsClose(end, start)) {
-                closed = true;
-            }
-
-            if (closed) {
-                loops.add(loop);
-            } else {
-                /*
-                 * A single open edge can occur when a prepatch boundary rides along a theta
-                 * cut and the edge was conservatively assigned to both adjacent bands. If
-                 * that adjacent band has no actual area inside this prepatch, the edge is
-                 * an orphan boundary fragment, not a failed theta patch.
-                 */
-                if (loop.size() > 1 || !unused.isEmpty()) {
-                    System.err.printf(
-                            "[ThetaSplice] Could not close loop for prepatch "
-                            + "(%d,%d,%d) theta band %d; partial curves=%d "
-                            + "unused=%d gap=%.3e%n",
-                            nx, ny, nz, nTheta,
-                            loop.size(), unused.size(),
-                            Point3D.Double.distance(end, start));
-                }
-            }       }
-
-        return loops;
-    }
 
     private static boolean pointsClose(Point3D.Double a, Point3D.Double b) {
         return Point3D.Double.distance(a, b) < LOOP_BUILD_TOL;

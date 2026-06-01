@@ -427,13 +427,13 @@ public class ChimeraView2D extends MapView2D
 		int nphi = indexArray[4];
 		BasePatch patch = null;
 		
-//		List<ThetaPatch> thetaPatches = model.getAlgorithmResult().getThetaPatches();
-//		if (thetaPatches != null && !thetaPatches.isEmpty()) {
-//			patch = BasePatch.fromSortedList(thetaPatches, nx, ny, nz, ntheta, -1);
-//		}
-//
-//		if (patch != null)
-//			return patch;
+		List<ThetaPatch> thetaPatches = model.getAlgorithmResult().getThetaPatches();
+		if (thetaPatches != null && !thetaPatches.isEmpty()) {
+			patch = BasePatch.fromSortedList(thetaPatches, nx, ny, nz, ntheta, -1);
+		}
+
+		if (patch != null)
+			return patch;
 		
 		List<PrePatch> prePatches = model.getAlgorithmResult().getPrePatches();
 

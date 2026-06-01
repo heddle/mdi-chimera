@@ -95,7 +95,7 @@ public abstract class BasePatch implements Comparable<BasePatch> {
 	public BasePatch(List<BaseCurve> curves, int nx, int ny, int nz) {
 		this(curves, nx, ny, nz, -1, -1);
 	}
-
+	
 	// -----------------------------------------------------------------------
 	// Abstract interface
 	// -----------------------------------------------------------------------
