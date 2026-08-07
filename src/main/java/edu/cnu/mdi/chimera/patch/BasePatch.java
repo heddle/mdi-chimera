@@ -6,7 +6,6 @@ import java.util.List;
 import edu.cnu.mdi.chimera.app.ChimeraApp;
 import edu.cnu.mdi.chimera.area.SphericalPolygonArea;
 import edu.cnu.mdi.chimera.curve.BaseCurve;
-import edu.cnu.mdi.chimera.curve.Crossing;
 import edu.cnu.mdi.chimera.curve.BaseCurve.PoleStatus;
 import edu.cnu.mdi.chimera.util.MathUtil;
 import edu.cnu.mdi.chimera.util.Point3D;
@@ -40,12 +39,15 @@ import edu.cnu.mdi.chimera.util.ThetaPhi;
  */
 public abstract class BasePatch implements Comparable<BasePatch> {
 
-	// -----------------------------------------------------------------------
-	// Constants
-	// -----------------------------------------------------------------------
+    /*
+     * Loop-building tolerance must be larger than BasePatch.LOOP_TOL because
+     * we sometimes project crossing endpoints onto exact theta grid lines.
+     * The assembled curves themselves are constructed with matching projected
+     * endpoints, so BasePatch validation should still pass with its tighter
+     * tolerance.
+     */
+    private static final double LOOP_BUILD_TOL = 1.0e-6;
 
-	protected static final double LOOP_TOL = 1.0e-6;
-	protected static final double TOL = 1.0e-8;
 
 	/** Samples per curve for area estimation. The paper uses n=5. */
 	protected static final int DEFAULT_AREA_SAMPLES = 50;
@@ -112,7 +114,7 @@ public abstract class BasePatch implements Comparable<BasePatch> {
 			Point3D.Double end = curves.get(i).p1;
 			Point3D.Double start = curves.get((i + 1) % n).p0;
 			double dist = Point3D.Double.distance(end, start);
-			if (dist > LOOP_TOL) {
+			if (dist > LOOP_BUILD_TOL) {
 				System.err.printf("[BasePatch] Loop gap at curve %d→%d: distance=%.3e%n", i, (i + 1) % n, dist);
 				return false;
 			}
@@ -120,26 +122,37 @@ public abstract class BasePatch implements Comparable<BasePatch> {
 		return true;
 	}
 
-	public static boolean pointsAreClose(Point3D.Double p1, Point3D.Double p2) {
-		return Point3D.Double.distance(p1, p2) < TOL;
-	}
-
 	// -----------------------------------------------------------------------
-	// Pole enclosure (paper Appendix A)
+	// Pole enclosure 
 	// -----------------------------------------------------------------------
-
+	/**
+	 * Returns true if this patch encloses the north pole, false otherwise.
+	 * The result is computed lazily and cached for future calls.
+	 *
+	 * @return true if this patch encloses the north pole, false otherwise
+	 */
 	public boolean enclosesNorthPole() {
 		if (_enclosesNorthPole == null)
 			computePoleEnclosure();
 		return _enclosesNorthPole;
 	}
 
+	/**
+	 * Returns true if this patch encloses the south pole, false otherwise.
+	 * The result is computed lazily and cached for future calls.
+	 *
+	 * @return true if this patch encloses the south pole, false otherwise
+	 */
 	public boolean enclosesSouthPole() {
 		if (_enclosesSouthPole == null)
 			computePoleEnclosure();
 		return _enclosesSouthPole;
 	}
 
+	/**
+	 * Returns true if this patch encloses either pole, i.e. if it is a "polar patch" as defined in the paper.
+	 * @return true if this patch encloses the north pole or the south pole, false otherwise
+	 */
 	public boolean polar() {
 		return enclosesNorthPole() || enclosesSouthPole();
 	}
@@ -263,11 +276,20 @@ public abstract class BasePatch implements Comparable<BasePatch> {
 		return SphericalPolygonArea.computeAreaFraction(pts);
 	}
 
-	/** Area estimate using {@value #DEFAULT_AREA_SAMPLES} samples per curve. */
+	/** 
+	 * Area estimate using {@value #DEFAULT_AREA_SAMPLES} samples per curve.
+	 * @return the normalized area estimate 
+	 */
 	public double areaEstimate() {
 		return areaEstimate(DEFAULT_AREA_SAMPLES);
 	}
 
+	/**
+	 * Computes the perimeter of this patch as the sum of the arc lengths of its
+	 * boundary curves.
+	 *
+	 * @return the perimeter length in the same units as the curve arc lengths
+	 */
 	public double perimeter() {
 		double total = 0.0;
 		for (BaseCurve curve : curves)
@@ -279,14 +301,32 @@ public abstract class BasePatch implements Comparable<BasePatch> {
 	// Index accessors
 	// -----------------------------------------------------------------------
 
+	/**
+	 * Returns true if this patch has valid spherical grid indices (nTheta and nPhi are non-negative).
+	 *
+	 * @return true if both nTheta and nPhi are non-negative, false otherwise
+	 */
 	public boolean isFullyIndexed() {
 		return nTheta >= 0 && nPhi >= 0;
 	}
 
+	/**
+	 * Returns a string representation of the Cartesian 3-tuple index of this patch.
+	 *
+	 * @return a string in the format "(nx, ny, nz)"
+	 */
 	public String cartesianIndex() {
 		return String.format("(%d,%d,%d)", nx, ny, nz);
 	}
 
+	/**
+	 * Returns a string representation of the full 5-tuple index of this patch, including
+	 * both Cartesian and spherical indices. If the spherical indices are not assigned (i.e. nTheta or nPhi is negative),
+	 * the method will still include the Cartesian indices and indicate that the spherical indices are unassigned.
+	 * For example, if nTheta and nPhi are both -1, the method might return "(nx, ny, nz) (unassigned)". If nTheta and nPhi are assigned, it will return "(nx, ny, nz) (nTheta, nPhi)".
+	 * 
+	 * @return
+	 */
 	public String fullIndex() {
 		return String.format("(%d,%d,%d) (%d,%d)", nx, ny, nz, nTheta, nPhi);
 	}
@@ -314,19 +354,25 @@ public abstract class BasePatch implements Comparable<BasePatch> {
 		return Integer.compare(this.nPhi, other.nPhi);
 	}
 
+	/**
+	 * Performs a binary search on the sorted list of patches to find the patch
+	 * with the specified indices. The list must be sorted in ascending order by
+	 * Cartesian indices (nx, ny, nz) and then by spherical indices (nTheta, nPhi).
+	 *
+	 * @param patches the sorted list of patches to search
+	 * @param nx      the Cartesian x-index of the patch to find
+	 * @param ny      the Cartesian y-index of the patch to find
+	 * @param nz      the Cartesian z-index of the patch to find
+	 * @param nTheta  the spherical theta-index of the patch to find
+	 * @param nPhi    the spherical phi-index of the patch to find
+	 * @return the patch with the specified indices, or null if not found
+	 */
 	public static BasePatch fromSortedList(List<? extends BasePatch> patches, int nx, int ny, int nz, int nTheta,
 			int nPhi) {
 		if (patches == null || patches.isEmpty()) {
 			return null;
 		}
 		
-		//brute-force linear search since patch count is expected to be small (≤ 8 prepatches per cell, ≤ 4 theta patches per cell)
-//		for (BasePatch p : patches) {
-//			if (p.nx == nx && p.ny == ny && p.nz == nz
-//					&& p.nTheta == nTheta && p.nPhi == nPhi) {
-//				return p;
-//			}
-//		}
 
 		int lo = 0, hi = patches.size() - 1;
 		while (lo <= hi) {
@@ -352,4 +398,49 @@ public abstract class BasePatch implements Comparable<BasePatch> {
 		}
 		return null;
 	}
+	
+
+    /**
+	 * Determines whether two points are close enough to be considered the same for loop-building purposes.
+	 *
+	 * <p>
+	 * This method uses a tolerance defined by {@code LOOP_BUILD_TOL} to account for minor discrepancies
+	 * in curve endpoints that may arise from numerical precision issues during curve construction and
+	 * projection. If the distance between the two points is less than this tolerance, they are considered
+	 * close enough to be treated as the same point when validating that curves form a closed loop.
+	 * </p>
+	 *
+	 * @param a the first point to compare
+	 * @param b the second point to compare
+	 * @return true if the points are close enough to be considered the same, false otherwise
+	 */
+    static boolean pointsClose(Point3D.Double a, Point3D.Double b) {
+        return Point3D.Double.distance(a, b) < LOOP_BUILD_TOL;
+    }
+
+    /**
+	 * Returns the index of the target curve in the list, or -1 if not found.
+	 *
+	 * @param curves the list of curves to search
+	 * @param target the curve to find
+	 * @return the index of the target curve, or -1 if not found
+	 */
+    static int curveIndexOf(List<BaseCurve> curves, BaseCurve target) {
+        for (int i = 0; i < curves.size(); i++) {
+            if (curves.get(i) == target) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Clamps the input value to the range [0, 1]. If t is less than 0, returns 0. If t is greater than 1, returns 1. Otherwise, returns t.
+     * @param t the input value to clamp
+     * @return the clamped value in the range [0, 1]
+     */
+    static double clamp01(double t) {
+        return Math.max(0.0, Math.min(1.0, t));
+    }
+
 }

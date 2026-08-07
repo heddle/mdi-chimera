@@ -73,6 +73,35 @@ public class PhiCurve extends BaseCurve {
         this.deltaTheta = deltaTheta;
     }
 
+    /**
+     * Constructs a constant-phi curve using an explicitly supplied meridian.
+     *
+     * <p>
+     * This is required when one endpoint is a pole. At a pole, phi is singular, so
+     * the ordinary constructor cannot infer the correct meridian from the endpoint
+     * coordinates.
+     * </p>
+     *
+     * @param p0      start point
+     * @param p1      end point
+     * @param r       sphere radius
+     * @param phiStar meridian angle in radians
+     * @return a phi curve from p0 to p1 along the supplied meridian
+     */
+    public static PhiCurve onMeridian(Point3D.Double p0,
+                                      Point3D.Double p1,
+                                      double r,
+                                      double phiStar) {
+
+        double fixedPhi = MathUtil.normalizeAngle(phiStar);
+        double theta0 = new edu.cnu.mdi.chimera.util.SphericalVector(p0).theta;
+        double theta1 = new edu.cnu.mdi.chimera.util.SphericalVector(p1).theta;
+
+        return new PhiCurve(p0, p1, r,
+                fixedPhi,
+                theta0,
+                theta1 - theta0);
+    }
     // -----------------------------------------------------------------------
     // BaseCurve implementation
     // -----------------------------------------------------------------------

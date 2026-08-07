@@ -20,6 +20,7 @@ import edu.cnu.mdi.chimera.map.ChimeraMapControlPanel;
 import edu.cnu.mdi.chimera.mc.MonteCarloPoint;
 import edu.cnu.mdi.chimera.model.ChimeraModel;
 import edu.cnu.mdi.chimera.patch.BasePatch;
+import edu.cnu.mdi.chimera.patch.Patch;
 import edu.cnu.mdi.chimera.patch.PrePatch;
 import edu.cnu.mdi.chimera.patch.ThetaPatch;
 import edu.cnu.mdi.component.OptionPanel;
@@ -28,7 +29,6 @@ import edu.cnu.mdi.graphics.style.LineStyle;
 import edu.cnu.mdi.graphics.style.SymbolType;
 import edu.cnu.mdi.graphics.toolbar.ToolBits;
 import edu.cnu.mdi.hover.HoverEvent;
-import edu.cnu.mdi.hover.HoverInfoWindow;
 import edu.cnu.mdi.log.Log;
 import edu.cnu.mdi.mapping.MapView2D;
 import edu.cnu.mdi.mapping.container.MapContainer;
@@ -66,8 +66,10 @@ public class ChimeraView2D extends MapView2D
 	private static final Color preFillColor = X11Colors.getX11Color("red", 64);
 	private static final Color thetaLineColor = X11Colors.getX11Color("dark green");
 	private static final Color thetaFillColor = X11Colors.getX11Color("dark green", 64);
+	private static final Color patchLineColor = X11Colors.getX11Color("black");
+	private static final Color patchFillColor = X11Colors.getX11Color("black", 64);
 
-	private static final Color PATCH_FILL = X11Colors.getX11Color("yellow", 64);
+	private static final Color HIGHLIGHT_FILL = X11Colors.getX11Color("yellow", 64);
 
 	// for hover highlighting of patches. This is not a model property because it's
 	// purely visual and transient.
@@ -158,7 +160,10 @@ public class ChimeraView2D extends MapView2D
 
 		ChimeraAlgorithmResult result = model.getAlgorithmResult();
 		if (result != null) {
-			if (optionPanel.showThetaPatches()) {
+			if (optionPanel.showPatches()) {
+				drawPatchList(g, container, result.getPatches(), patchFillColor, patchLineColor);
+			}
+	     	if (optionPanel.showThetaPatches()) {
 				drawPatchList(g, container, result.getThetaPatches(), thetaFillColor, thetaLineColor);
 			}
 			if (optionPanel.showPrepatches()) {
@@ -168,12 +173,16 @@ public class ChimeraView2D extends MapView2D
 
 		if (highlightedPatch != null) {
 			System.out.println("Highlighting patch: " + highlightedPatch);
-			DrawPatch.drawPatch(g, (MapContainer) container, highlightedPatch, PATCH_FILL, Color.RED, 1.5f,
+			DrawPatch.drawPatch(g, (MapContainer) container, highlightedPatch, HIGHLIGHT_FILL, Color.RED, 1.5f,
 					LineStyle.SOLID);
 
 			if (highlightedPatch instanceof PrePatch) {
 				PrePatch prePatch = (PrePatch) highlightedPatch;
 				DrawPatch.drawThetaCrossings(g, (MapContainer) container, prePatch);
+			}
+			else if (highlightedPatch instanceof ThetaPatch) {
+				ThetaPatch thetaPatch = (ThetaPatch) highlightedPatch;
+				DrawPatch.drawPhiCrossings(g, (MapContainer) container, thetaPatch);
 			}
 		}
 	}
@@ -188,10 +197,7 @@ public class ChimeraView2D extends MapView2D
 		MapContainer mapContainer = (MapContainer) container;
 
 		for (BasePatch patch : patches) {
-			if (patch.polar())
-				DrawPatch.drawPatch(g, mapContainer, patch, fillColor, lineColor, 3.0f, LineStyle.DOT);
-			else
-				DrawPatch.drawPatch(g, mapContainer, patch, fillColor, lineColor, 1.5f, LineStyle.SOLID);
+			DrawPatch.drawPatch(g, mapContainer, patch, fillColor, lineColor, 1.5f, LineStyle.SOLID);
 		}
 	}
 
@@ -427,13 +433,26 @@ public class ChimeraView2D extends MapView2D
 		int nphi = indexArray[4];
 		BasePatch patch = null;
 		
+		//check patches first, then theta patches, then prepatches. This is the order of importance for feedback and hover highlighting.
+		List<Patch> patches = model.getAlgorithmResult().getPatches();
+		if (patches != null && !patches.isEmpty()) {
+			System.out.println("Checking " + patches.size() + " patches for hover feedback...");
+			patch = BasePatch.fromSortedList(patches, nx, ny, nz, ntheta, nphi);
+		}
+		
+		if (patch != null) {
+			return patch;
+		}
+		
+		
 		List<ThetaPatch> thetaPatches = model.getAlgorithmResult().getThetaPatches();
 		if (thetaPatches != null && !thetaPatches.isEmpty()) {
 			patch = BasePatch.fromSortedList(thetaPatches, nx, ny, nz, ntheta, -1);
 		}
 
-		if (patch != null)
+		if (patch != null) {
 			return patch;
+		}
 		
 		List<PrePatch> prePatches = model.getAlgorithmResult().getPrePatches();
 
@@ -457,8 +476,6 @@ public class ChimeraView2D extends MapView2D
 	public void hoverUpdate(HoverEvent he) {
 		Point pp = he.getLocation();
 		MapContainer container = (MapContainer) getIContainer();
-		HoverInfoWindow win = container.getHoverWindow();
-		System.out.println("Hover update at " + pp);
 		highlightedPatch = getHotPatch(container, pp, null);
 		refresh();
 	}

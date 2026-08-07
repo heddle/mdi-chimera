@@ -77,6 +77,9 @@ public class GeneralCurve extends BaseCurve {
 
 	/** Cached list of crossings where the curve crosses theta grid lines. */
 	public List<Crossing> thetaCrossings;
+	
+	/** Cached list of crossings where the curve crosses phi grid lines. */
+	public List<Crossing> phiCrossings;
 
 	// -----------------------------------------------------------------------
 	// Construction
@@ -214,6 +217,69 @@ public class GeneralCurve extends BaseCurve {
 			double[] xyz = primeToOriginal(t);
 			return MathUtil.normalizeAngle(Math.atan2(xyz[1], xyz[0]));
 		};
+	}
+	
+	@Override
+	public List<GeneralCurve> splitAtPhiCrossings() {
+			    List<Crossing> crossings = getPhiCrossings();
+
+	    if (crossings == null || crossings.isEmpty()) {
+	        return List.of(this);
+	    }
+
+	    List<Double> splitTs = new ArrayList<>();
+
+	    for (Crossing crossing : crossings) {
+	        if (crossing == null) {
+	            continue;
+	        }
+
+	        double t = crossing.t();
+
+	        if (!Double.isFinite(t)) {
+	            continue;
+	        }
+
+	        t = Math.max(0.0, Math.min(1.0, t));
+
+	        boolean duplicate = false;
+	        for (double existing : splitTs) {
+	            if (Math.abs(existing - t) < 1.0e-10) {
+	                duplicate = true;
+	                break;
+	            }
+	        }
+
+	        if (!duplicate) {
+	            splitTs.add(t);
+	        }
+	    }
+
+	    if (splitTs.isEmpty()) {
+	        return List.of(this);
+	    }
+
+	    splitTs.sort(Double::compare);
+
+	    List<GeneralCurve> pieces = new ArrayList<>();
+
+	    double t0 = 0.0;
+	    for (double t1 : splitTs) {
+	        if (t1 - t0 > TOL) {
+	            pieces.add(subCurve(t0, t1));
+	        }
+	        t0 = t1;
+	    }
+
+	    if (1.0 - t0 > TOL) {
+	        pieces.add(subCurve(t0, 1.0));
+	    }
+
+	    if (pieces.isEmpty()) {
+	        return List.of(this);
+	    }
+
+	    return pieces;
 	}
 	
 	/**
@@ -695,6 +761,314 @@ public class GeneralCurve extends BaseCurve {
 
 	        before = theta(t - dt) - targetTheta;
 	        after  = theta(t + dt) - targetTheta;
+	    }
+
+	    return before * after < 0.0;
+	}
+	
+	/**
+	 * Computes candidate crossings where this GENERAL curve meets phi grid lines.
+	 *
+	 * <p>
+	 * A phi grid line is a meridian: the half-plane through the z-axis with azimuth
+	 * {@code targetPhi}. For a point {@code (x,y,z)}, lying in that meridian plane is
+	 * equivalent to
+	 * </p>
+	 *
+	 * <pre>
+	 *   y cos(targetPhi) - x sin(targetPhi) = 0.
+	 * </pre>
+	 *
+	 * <p>
+	 * In the primed parameter of a {@code GeneralCurve}, both {@code x} and
+	 * {@code y} are linear combinations of {@code cos(phiPrime)} and
+	 * {@code sin(phiPrime)}, so the crossing equation can be solved analytically.
+	 * Candidate endpoint crossings are included; patch-level splice code can later
+	 * decide whether they are genuine band changes.
+	 * </p>
+	 *
+	 * @return list of candidate crossings with phi grid lines
+	 */
+	@Override
+	public List<Crossing> getPhiCrossings() {
+	    if (phiCrossings != null) {
+	        return phiCrossings;
+	    }
+
+	    phiCrossings = new ArrayList<>();
+
+	    /*
+	     * If the curve lies along a meridian, it is a phi-boundary segment, not a
+	     * crossing. Reporting its endpoints as crossings would create artificial
+	     * odd counts at the patch level.
+	     */
+	    if (isConstantPhi()) {
+	        return phiCrossings;
+	    }
+
+	    SphericalGrid grid = ChimeraApp.getInstance().getSphericalGrid();
+	    Grid1D phiGrid = grid.getPhiGrid();
+
+	    for (int i = 0; i < phiGrid.numPoints(); i++) {
+	        double targetPhi = MathUtil.normalizeAngle(phiGrid.valueAt(i));
+	        addPhiCrossingsForTarget(phiCrossings, targetPhi, i);
+	    }
+
+	    addEndpointPhiCrossing(phiCrossings, phiGrid, 0.0);
+	    addEndpointPhiCrossing(phiCrossings, phiGrid, 1.0);
+
+	    phiCrossings = Crossing.removeDuplicates(phiCrossings);
+	    return phiCrossings;
+	}
+	
+	/**
+	 * Returns true if this curve lies effectively along a constant-phi meridian.
+	 */
+	private boolean isConstantPhi() {
+	    /*
+	     * Avoid treating a pole-touching curve as constant phi. At a pole, phi is
+	     * singular and the sampled value is not meaningful enough for this test.
+	     */
+	    if (Math.sin(theta(0.0)) < TOL
+	            || Math.sin(theta(0.5)) < TOL
+	            || Math.sin(theta(1.0)) < TOL) {
+	        return false;
+	    }
+
+	    double ph0 = phi(0.0);
+	    double phm = phi(0.5);
+	    double ph1 = phi(1.0);
+
+	    double d0m = Math.abs(MathUtil.normalizeAngle(phm - ph0));
+	    double d01 = Math.abs(MathUtil.normalizeAngle(ph1 - ph0));
+
+	    return d0m < TOL && d01 < TOL;
+	}
+
+	/**
+	 * Adds crossings with one target phi grid line.
+	 */
+	private void addPhiCrossingsForTarget(List<Crossing> crossings,
+	                                      double targetPhi,
+	                                      int phiIndex) {
+
+	    if (Math.abs(deltaPrimePhi) < TOL) {
+	        return;
+	    }
+
+	    /*
+	     * In the primed frame:
+	     *
+	     *   x' = R sin(thetaStar) cos(u)
+	     *   y' = R sin(thetaStar) sin(u)
+	     *   z' = R cos(thetaStar)
+	     *
+	     * where u = phiPrime.
+	     *
+	     * In the original frame:
+	     *
+	     *   x = a0 cos(u) + b0 sin(u) + c0
+	     *   y = a1 cos(u) + b1 sin(u) + c1
+	     *
+	     * The meridian condition is:
+	     *
+	     *   y cos(phi) - x sin(phi) = 0.
+	     */
+	    double sinThetaStar = Math.sin(thetaStar);
+	    double cosThetaStar = Math.cos(thetaStar);
+
+	    double sx = radius * sinThetaStar;
+	    double sz = radius * cosThetaStar;
+
+	    double cosPhi = Math.cos(targetPhi);
+	    double sinPhi = Math.sin(targetPhi);
+
+	    double a = sx * (invMatrix[1][0] * cosPhi - invMatrix[0][0] * sinPhi);
+	    double b = sx * (invMatrix[1][1] * cosPhi - invMatrix[0][1] * sinPhi);
+	    double c = sz * (invMatrix[1][2] * cosPhi - invMatrix[0][2] * sinPhi);
+
+	    double amp = Math.hypot(a, b);
+
+	    if (amp < TOL * radius) {
+	        return;
+	    }
+
+	    /*
+	     * Solve:
+	     *
+	     *   a cos(u) + b sin(u) + c = 0
+	     *
+	     * as:
+	     *
+	     *   amp cos(u - alpha) = -c
+	     */
+	    double q = -c / amp;
+
+	    double eps = 1.0e-12;
+	    if (q > 1.0 + eps || q < -1.0 - eps) {
+	        return;
+	    }
+
+	    q = Math.max(-1.0, Math.min(1.0, q));
+
+	    double alpha = Math.atan2(b, a);
+	    double gamma = Math.acos(q);
+
+	    addPhiPrimeSolutionForPhiCrossing(crossings,
+	            alpha + gamma, targetPhi, phiIndex);
+
+	    addPhiPrimeSolutionForPhiCrossing(crossings,
+	            alpha - gamma, targetPhi, phiIndex);
+	}
+
+	/**
+	 * Adds one periodic phi-prime solution if it lies in the curve sweep and is on
+	 * the selected meridian ray rather than the opposite meridian ray.
+	 */
+	private void addPhiPrimeSolutionForPhiCrossing(List<Crossing> crossings,
+	                                               double phiPrimeSolution,
+	                                               double targetPhi,
+	                                               int phiIndex) {
+
+	    double start = primePhi0;
+	    double end = primePhi0 + deltaPrimePhi;
+
+	    double lo = Math.min(start, end);
+	    double hi = Math.max(start, end);
+
+	    double twoPi = 2.0 * Math.PI;
+
+	    int kMin = (int) Math.floor((lo - phiPrimeSolution) / twoPi) - 1;
+	    int kMax = (int) Math.ceil((hi - phiPrimeSolution) / twoPi) + 1;
+
+	    double phiTol = Math.max(1.0e-12, 1.0e-10 * Math.abs(deltaPrimePhi));
+
+	    for (int k = kMin; k <= kMax; k++) {
+	        double phiPrime = phiPrimeSolution + k * twoPi;
+
+	        if (phiPrime < lo - phiTol || phiPrime > hi + phiTol) {
+	            continue;
+	        }
+
+	        double t = (phiPrime - start) / deltaPrimePhi;
+
+	        if (t < -1.0e-10 || t > 1.0 + 1.0e-10) {
+	            continue;
+	        }
+
+	        t = Math.max(0.0, Math.min(1.0, t));
+
+	        /*
+	         * Endpoint hits are added explicitly below.
+	         */
+	        if (isEndpointT(t)) {
+	            continue;
+	        }
+
+	        /*
+	         * The meridian plane equation is satisfied both by phi and phi+pi.
+	         * Keep only the point on the target meridian ray:
+	         *
+	         *   x cos(phi) + y sin(phi) >= 0.
+	         */
+	        if (!onTargetPhiRay(t, targetPhi)) {
+	            continue;
+	        }
+
+	        if (!changesPhiSideAt(t, targetPhi)) {
+	            continue;
+	        }
+
+	        crossings.add(new Crossing(this, t, targetPhi, phiIndex));
+	    }
+	}
+
+	/**
+	 * Adds a candidate endpoint phi crossing if the endpoint lies on a phi grid line
+	 * and the curve immediately leaves that line.
+	 */
+	private void addEndpointPhiCrossing(List<Crossing> crossings,
+	                                    Grid1D phiGrid,
+	                                    double tEndpoint) {
+
+	    /*
+	     * Do not create endpoint phi crossings at a pole. Phi is singular there.
+	     */
+	    if (Math.sin(theta(tEndpoint)) < TOL) {
+	        return;
+	    }
+
+	    double ph = MathUtil.normalizeAngle(phi(tEndpoint));
+
+	    for (int i = 0; i < phiGrid.numPoints(); i++) {
+	        double targetPhi = MathUtil.normalizeAngle(phiGrid.valueAt(i));
+
+	        if (Math.abs(MathUtil.normalizeAngle(ph - targetPhi)) > TOL) {
+	            continue;
+	        }
+
+	        double probeT = (tEndpoint <= 0.5) ? SIDE_TEST_DT : 1.0 - SIDE_TEST_DT;
+	        probeT = Math.max(0.0, Math.min(1.0, probeT));
+
+	        double probePhi = MathUtil.normalizeAngle(phi(probeT));
+
+	        if (Math.abs(MathUtil.normalizeAngle(probePhi - targetPhi)) < TOL) {
+	            continue;
+	        }
+
+	        crossings.add(new Crossing(this, tEndpoint, targetPhi, i));
+	    }
+	}
+
+	/**
+	 * Tests whether the point at {@code t} is on the target meridian ray rather than
+	 * the opposite meridian ray.
+	 */
+	private boolean onTargetPhiRay(double t, double targetPhi) {
+	    Point3D.Double p = getPoint(t);
+
+	    double radialProjection = p.x * Math.cos(targetPhi)
+	            + p.y * Math.sin(targetPhi);
+
+	    return radialProjection >= -1.0e-10 * radius;
+	}
+
+	/**
+	 * Tests whether phi changes sides across an interior candidate crossing.
+	 *
+	 * <p>
+	 * This filters tangencies and numerical grazes. The side is measured by the
+	 * signed normalized angular difference {@code phi(t) - targetPhi}.
+	 * </p>
+	 */
+	private boolean changesPhiSideAt(double t, double targetPhi) {
+	    double dt = Math.min(SIDE_TEST_DT,
+	            0.25 * Math.min(t, 1.0 - t));
+
+	    if (dt <= 0.0) {
+	        return false;
+	    }
+
+	    double before = MathUtil.normalizeAngle(phi(t - dt) - targetPhi);
+	    double after  = MathUtil.normalizeAngle(phi(t + dt) - targetPhi);
+
+	    if (Math.abs(before) < TOL || Math.abs(after) < TOL) {
+	        dt = Math.min(1.0e-4, 0.25 * Math.min(t, 1.0 - t));
+	        if (dt <= 0.0) {
+	            return false;
+	        }
+
+	        before = MathUtil.normalizeAngle(phi(t - dt) - targetPhi);
+	        after  = MathUtil.normalizeAngle(phi(t + dt) - targetPhi);
+	    }
+
+	    /*
+	     * Near the target meridian, a genuine crossing changes the sign of the
+	     * wrapped difference. Guard against branch-cut artifacts by requiring both
+	     * samples to be reasonably close to the target meridian.
+	     */
+	    if (Math.abs(before) > Math.PI / 2.0 || Math.abs(after) > Math.PI / 2.0) {
+	        return false;
 	    }
 
 	    return before * after < 0.0;

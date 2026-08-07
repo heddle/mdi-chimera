@@ -5,6 +5,7 @@ import java.util.List;
 
 import edu.cnu.mdi.chimera.cell.Cell;
 import edu.cnu.mdi.chimera.cell.IntersectionType;
+import edu.cnu.mdi.chimera.patch.Patch;
 import edu.cnu.mdi.chimera.patch.PrePatch;
 import edu.cnu.mdi.chimera.patch.ThetaPatch;
 
@@ -22,12 +23,19 @@ public class ChimeraAlgorithmResult {
     // The list of theta-patches produced by the theta splice.
     private List<ThetaPatch> thetaPatches;
     
+    // The final, complete patches after theta and phi slicing
+    private List<Patch> patches;
+    
     // The total normalized area of the prepatches, used for feedback and debugging.
     private double prePatchArea = 0.0;
     
     // The total normalized area of the theta patches, used for feedback and debugging.
     private double thetaPatchArea = 0.0;
+    
+    // The total normalized area of the final patches, used for feedback and debugging.
+    private double patchArea = 0.0;
 
+    // Private constructor to enforce use of factory method for creating empty results.
     private ChimeraAlgorithmResult() {
         intersectingCells = null;
         prePatches        = null;
@@ -123,25 +131,21 @@ public class ChimeraAlgorithmResult {
      * @param prePatches the prepatch list to store
      */
     public void setPrePatches(List<PrePatch> prePatches) {
-        this.prePatches = prePatches;
-        Collections.sort(this.prePatches);
+		this.prePatches = prePatches;
+		Collections.sort(this.prePatches);
 
 		// compute total area for feedback and debugging
 		prePatchArea = 0;
 		if (prePatches != null) {
 
 			for (PrePatch prePatch : prePatches) {
-//				if (prePatch.isPolePatch()) {
-//					System.out.println("Warning: PrePatch is a pole patch. Skipping area calculation for this patch.");
-//					continue;
-//				}
 				prePatchArea += prePatch.areaEstimate();
 			}
 		}
 	}
 
-    // -----------------------------------------------------------------------
-    // ThetaPatches
+	// -----------------------------------------------------------------------
+	// ThetaPatches
     // -----------------------------------------------------------------------
 
     public List<ThetaPatch> getThetaPatches() { return thetaPatches; }
@@ -165,6 +169,32 @@ public class ChimeraAlgorithmResult {
 			}
 		}
 	}
+	
+	// -----------------------------------------------------------------------
+	// Final Patches
+    // -----------------------------------------------------------------------
+
+		public List<Patch> getPatches() { return patches; }
+		
+		public int getPatchCount() { return patches == null ? 0 : patches.size(); }
+		
+		/**
+		 * Set the list of final patches.
+		 * 
+		 * @param patches the final patch list to store
+		 */
+		public void setPatches(List<Patch> patches) {
+			this.patches = patches;
+			Collections.sort(this.patches);
+			
+			// compute total area for feedback and debugging
+			patchArea = 0;
+			if (patches != null) {
+				for (Patch patch : patches) {
+					patchArea += patch.areaEstimate();
+				}
+			}
+		}
 
     // -----------------------------------------------------------------------
     // Feedback
@@ -199,5 +229,9 @@ public class ChimeraAlgorithmResult {
             feedbackList.add(String.format(
                     "%stheta patches: %d normalized area: %.12f", colorString, thetaPatches.size(), thetaPatchArea, thetaPatchArea));
         }
+        if (patches != null) {
+			feedbackList.add(String.format(
+					"%sfinal patches: %d normalized area: %.12f", colorString, patches.size(), patchArea));
+		}
     }
 }

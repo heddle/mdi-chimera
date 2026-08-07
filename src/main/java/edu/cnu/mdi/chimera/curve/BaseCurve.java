@@ -1,5 +1,7 @@
 package edu.cnu.mdi.chimera.curve;
 
+import java.util.List;
+
 import org.apache.commons.math3.analysis.UnivariateFunction;
 import org.apache.commons.math3.analysis.integration.RombergIntegrator;
 
@@ -227,7 +229,44 @@ public abstract class BaseCurve {
         }
         return PoleStatus.NONE;
     }
-
+    
+    /**
+	 * Returns a list of crossings where this curve intersects the φ grid lines.
+	 *
+	 * <p>The default implementation returns {@code null}; only {@link ThetaCurve}
+	 * and {@link GeneralCurve} override this method to compute actual crossings.</p>
+	 *
+	 * @return list of φ crossings, or {@code null} if not applicable
+	 */
+	public List<Crossing> getPhiCrossings() {
+		// default implementation returns null; only ThetaCurve and GeneralCurve override this method to compute actual crossings
+		return null;
+	}
+	
+	/**
+	 * Returns a list of sub-curves resulting from splitting this curve at φ crossings.
+	 *
+	 * <p>The default implementation returns {@code null}; only {@link ThetaCurve}
+	 * and {@link GeneralCurve} override this method to compute actual splits at φ crossings.</p>
+	 *
+	 * @return list of sub-curves split at φ crossings, or {@code null} if not applicable
+	 */
+	public List<? extends BaseCurve> splitAtPhiCrossings() {
+		// default implementation returns null; only ThetaCurve and GeneralCurve override this method to compute actual splits at φ crossings
+		return null;
+	}
+	
+	
+	/**
+	 * Returns true if a pole lies on this curve.
+	 *
+	 *@param point the pole to check (should be either the north pole at θ=0 or the south pole at θ=π)
+	 *@param tolerance tolerance 
+	 * @return true if a pole lies on this curve, false otherwise
+	 */
+	public abstract boolean pointOnCurve(SphericalVector point, double tolerance);
+	
+	
     /**
      * Computes the winding number contribution of this curve (paper Algorithm 3).
      *

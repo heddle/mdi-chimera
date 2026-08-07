@@ -9,6 +9,7 @@ import edu.cnu.mdi.chimera.grid.CartesianGrid;
 import edu.cnu.mdi.chimera.grid.SphereIntersectionScanner;
 import edu.cnu.mdi.chimera.grid.SphericalGrid;
 import edu.cnu.mdi.chimera.model.ChimeraGridSpec;
+import edu.cnu.mdi.chimera.patch.Patch;
 import edu.cnu.mdi.chimera.patch.PrePatch;
 import edu.cnu.mdi.chimera.patch.ThetaPatch;
 
@@ -42,7 +43,16 @@ public class ChimeraAlgorithm {
             thetaPatches.addAll(ThetaPatch.splice(pre));
         }
         result.setThetaPatches(thetaPatches);
-
+        
+        // Step 4: phi splice — cut each theta patch by the spherical phi grid.
+        System.out.println("Theta splice produced " + thetaPatches.size() + " theta patches.");
+        List<Patch> patches = new ArrayList<>();
+        for (ThetaPatch theta : thetaPatches) {
+			patches.addAll(Patch.splice(theta));
+		}
+        result.setPatches(patches);
+        System.out.println("Phi splice produced " + patches.size() + " final patches.");
+        
         // TODO: Step 4 — phi splice
         // TODO: Step 5 — area and perimeter
 

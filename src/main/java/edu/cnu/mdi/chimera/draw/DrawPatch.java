@@ -10,6 +10,7 @@ import edu.cnu.mdi.chimera.curve.BaseCurve;
 import edu.cnu.mdi.chimera.curve.Crossing;
 import edu.cnu.mdi.chimera.patch.BasePatch;
 import edu.cnu.mdi.chimera.patch.PrePatch;
+import edu.cnu.mdi.chimera.patch.ThetaPatch;
 import edu.cnu.mdi.chimera.util.SphericalVector;
 import edu.cnu.mdi.chimera.util.ThetaPhi;
 import edu.cnu.mdi.graphics.style.LineStyle;
@@ -66,6 +67,13 @@ public class DrawPatch {
 				lineWidth, lineStyle);
 	}
 	
+	/**
+	 * Draws the theta crossings of a patch on the map using the provided Graphics2D object and MapContainer.
+	 *
+	 * @param g2        The Graphics2D object to draw on.
+	 * @param container The MapContainer that provides the mapping context.
+	 * @param patch     The PrePatch whose theta crossings are to be drawn.
+	 */
 	public static void drawThetaCrossings(Graphics2D g2, MapContainer container, PrePatch patch) {
 		Objects.requireNonNull(g2, "Graphics2D object cannot be null");
 		Objects.requireNonNull(container, "MapContainer cannot be null");
@@ -86,6 +94,29 @@ public class DrawPatch {
 			double lon = pos.phi; // Convert to longitude
 			
 			view.drawSymbol(g2, lat, lon, SymbolType.CIRCLE, 8, Color.black, Color.yellow);
+		}
+	}
+	
+	public static void drawPhiCrossings(Graphics2D g2, MapContainer container, ThetaPatch patch) {
+		Objects.requireNonNull(g2, "Graphics2D object cannot be null");
+		Objects.requireNonNull(container, "MapContainer cannot be null");
+		Objects.requireNonNull(patch, "BasePatch cannot be null");
+		
+		MapView2D view = (MapView2D)(container.getView());
+		
+		List<Crossing> crossings = patch.getAllPhiCrossings();
+		if (crossings == null || crossings.isEmpty()) {
+			// No crossings to draw
+			return;
+		}
+		
+		for (Crossing crossing : crossings) {
+			BaseCurve curve = crossing.curve();
+			SphericalVector pos = curve.getSphericalVector(crossing.t());
+			double lat = PIOVER2 - pos.theta; // Convert theta to latitude
+			double lon = pos.phi; // Convert to longitude
+			
+			view.drawSymbol(g2, lat, lon, SymbolType.SQUARE, 8, Color.black, Color.cyan);
 		}
 	}
 
