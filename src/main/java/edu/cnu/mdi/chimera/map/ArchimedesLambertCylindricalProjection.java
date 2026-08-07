@@ -8,7 +8,6 @@ import java.awt.geom.Point2D;
 import java.awt.geom.Rectangle2D;
 
 import edu.cnu.mdi.container.IContainer;
-import edu.cnu.mdi.mapping.container.MapContainer;
 import edu.cnu.mdi.mapping.graphics.MapGraphics;
 import edu.cnu.mdi.mapping.projection.EProjection;
 import edu.cnu.mdi.mapping.projection.IMapProjection;
@@ -145,14 +144,14 @@ public class ArchimedesLambertCylindricalProjection implements IMapProjection {
     @Override
     public void drawLatitudeLine(Graphics2D g2, IContainer container, double latitude) {
         double lat = clampLatitude(latitude);
-     	MapGraphics.drawHorizontalLatitudeLine(g2, (MapContainer)container, lat,
-    			getCentralLongitude(), theme);
+		MapGraphics.drawHorizontalLatitudeLine(g2, container, this, lat,
+				getCentralLongitude(), theme);
     }
 
     @Override
 	public void drawLongitudeLine(Graphics2D g2, IContainer container, double longitude) {
 		double lon = wrapLongitude(longitude);
-		MapGraphics.drawVerticalLongitudeLine(g2, (MapContainer) container, lon, theme);
+		MapGraphics.drawVerticalLongitudeLine(g2, container, this, lon, theme);
 	}
 
     @Override

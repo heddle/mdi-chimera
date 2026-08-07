@@ -264,7 +264,28 @@ public abstract class BaseCurve {
 	 *@param tolerance tolerance 
 	 * @return true if a pole lies on this curve, false otherwise
 	 */
-	public abstract boolean pointOnCurve(SphericalVector point, double tolerance);
+	public boolean pointOnCurve(SphericalVector point, double tolerance) {
+		if (point == null || !Double.isFinite(tolerance) || tolerance < 0.0) {
+			return false;
+		}
+
+		double targetTheta;
+		if (Math.abs(point.theta) <= tolerance) {
+			targetTheta = 0.0;
+		} else if (Math.abs(point.theta - Math.PI) <= tolerance) {
+			targetTheta = Math.PI;
+		} else {
+			return false;
+		}
+
+		double step = 1.0 / POLE_SCAN_STEPS;
+		for (int i = 0; i <= POLE_SCAN_STEPS; i++) {
+			if (Math.abs(theta(i * step) - targetTheta) <= tolerance) {
+				return true;
+			}
+		}
+		return false;
+	}
 	
 	
     /**
