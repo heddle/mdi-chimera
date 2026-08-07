@@ -3,11 +3,11 @@ package edu.cnu.mdi.chimera.patch;
 import java.util.ArrayList;
 import java.util.List;
 
-import edu.cnu.mdi.chimera.app.ChimeraApp;
 import edu.cnu.mdi.chimera.area.SphericalPolygonArea;
 import edu.cnu.mdi.chimera.curve.BaseCurve;
 import edu.cnu.mdi.chimera.curve.BaseCurve.PoleStatus;
 import edu.cnu.mdi.chimera.util.MathUtil;
+import edu.cnu.mdi.chimera.model.ChimeraGridContext;
 import edu.cnu.mdi.chimera.util.Point3D;
 import edu.cnu.mdi.chimera.util.ThetaPhi;
 
@@ -80,7 +80,7 @@ public abstract class BasePatch implements Comparable<BasePatch> {
 			throw new IllegalArgumentException("A patch requires at least two curves.");
 
 		this.curves = curves;
-		this.radius = ChimeraApp.getInstance().getRadius();
+		this.radius = ChimeraGridContext.radius();
 		this.nx = nx;
 		this.ny = ny;
 		this.nz = nz;

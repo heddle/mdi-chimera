@@ -5,9 +5,9 @@ import java.util.List;
 
 import org.apache.commons.math3.analysis.UnivariateFunction;
 
-import edu.cnu.mdi.chimera.app.ChimeraApp;
 import edu.cnu.mdi.chimera.grid.Grid1D;
 import edu.cnu.mdi.chimera.grid.SphericalGrid;
+import edu.cnu.mdi.chimera.model.ChimeraGridContext;
 import edu.cnu.mdi.chimera.util.ChimeraPlane;
 import edu.cnu.mdi.chimera.util.ChimeraRotation;
 import edu.cnu.mdi.chimera.util.MathUtil;
@@ -76,10 +76,10 @@ public class GeneralCurve extends BaseCurve {
 	private final double deltaPrimePhi;
 
 	/** Cached list of crossings where the curve crosses theta grid lines. */
-	public List<Crossing> thetaCrossings;
+	private List<Crossing> thetaCrossings;
 	
 	/** Cached list of crossings where the curve crosses phi grid lines. */
-	public List<Crossing> phiCrossings;
+	private List<Crossing> phiCrossings;
 
 	// -----------------------------------------------------------------------
 	// Construction
@@ -182,6 +182,52 @@ public class GeneralCurve extends BaseCurve {
 		this.thetaStar = thetaStar;
 		this.primePhi0 = primePhi0;
 		this.deltaPrimePhi = deltaPrimePhi;
+	}
+
+	/**
+	 * Reconstructs a directed general curve from its canonical small-circle
+	 * parameterization.
+	 *
+	 * <p>The vectors {@code basisU} and {@code basisV} form the first two columns
+	 * of the primed-to-original orthonormal rotation. Their cross product supplies
+	 * the circle-plane normal. The signed center displacement along that normal
+	 * determines the primed colatitude.</p>
+	 *
+	 * @param p0 exported start point
+	 * @param p1 exported end point
+	 * @param sphereRadius radius of the containing sphere
+	 * @param center center of the small circle
+	 * @param basisU first in-plane unit basis vector
+	 * @param basisV second in-plane unit basis vector
+	 * @param alpha0 starting circle angle
+	 * @param deltaAlpha signed angular sweep
+	 * @return reconstructed directed general curve
+	 */
+	public static GeneralCurve fromCircleParameters(Point3D.Double p0,
+			Point3D.Double p1, double sphereRadius, Point3D.Double center,
+			Point3D.Double basisU, Point3D.Double basisV, double alpha0,
+			double deltaAlpha) {
+		double nx = basisU.y * basisV.z - basisU.z * basisV.y;
+		double ny = basisU.z * basisV.x - basisU.x * basisV.z;
+		double nz = basisU.x * basisV.y - basisU.y * basisV.x;
+		double normalLength = Math.sqrt(nx * nx + ny * ny + nz * nz);
+		if (!Double.isFinite(normalLength) || normalLength < TOL) {
+			throw new IllegalArgumentException("General-curve basis vectors are degenerate.");
+		}
+		nx /= normalLength;
+		ny /= normalLength;
+		nz /= normalLength;
+
+		double[][] inverse = {
+			{ basisU.x, basisV.x, nx },
+			{ basisU.y, basisV.y, ny },
+			{ basisU.z, basisV.z, nz }
+		};
+		double zPrime = center.x * nx + center.y * ny + center.z * nz;
+		double thetaPrime = Math.acos(Math.max(-1.0,
+				Math.min(1.0, zPrime / sphereRadius)));
+		return new GeneralCurve(p0, p1, sphereRadius, inverse, thetaPrime,
+				alpha0, deltaAlpha);
 	}
 
 	// -----------------------------------------------------------------------
@@ -433,6 +479,74 @@ public class GeneralCurve extends BaseCurve {
 	}
 
 	// -----------------------------------------------------------------------
+	// Exact geometric export accessors
+	// -----------------------------------------------------------------------
+
+	/**
+	 * Returns the center of the small circle containing this arc.
+	 *
+	 * <p>The returned point is expressed in the original Cartesian coordinate
+	 * system. Together with {@link #getCircleRadius()}, {@link #getCircleBasisU()},
+	 * {@link #getCircleBasisV()}, {@link #getCircleAlpha0()}, and
+	 * {@link #getCircleDeltaAlpha()}, it defines the exact directed arc by
+	 * {@code c + rho * (u*cos(alpha) + v*sin(alpha))}.</p>
+	 *
+	 * @return a new point containing the circle center
+	 */
+	public Point3D.Double getCircleCenter() {
+		double zPrime = radius * Math.cos(thetaStar);
+		double[] center = ChimeraRotation.multiplyMatrixVector(invMatrix,
+				new double[] { 0.0, 0.0, zPrime });
+		return new Point3D.Double(center[0], center[1], center[2]);
+	}
+
+	/** @return the radius of the small circle containing this arc */
+	public double getCircleRadius() {
+		return radius * Math.sin(thetaStar);
+	}
+
+	/**
+	 * Returns the first unit basis vector in the circle plane.
+	 * @return a new unit vector represented as a point triple
+	 */
+	public Point3D.Double getCircleBasisU() {
+		return new Point3D.Double(invMatrix[0][0], invMatrix[1][0], invMatrix[2][0]);
+	}
+
+	/**
+	 * Returns the second unit basis vector in the circle plane.
+	 * @return a new unit vector represented as a point triple
+	 */
+	public Point3D.Double getCircleBasisV() {
+		return new Point3D.Double(invMatrix[0][1], invMatrix[1][1], invMatrix[2][1]);
+	}
+
+	/** @return the starting circle angle in radians */
+	public double getCircleAlpha0() {
+		return primePhi0;
+	}
+
+	/** @return the signed angular sweep of the directed arc in radians */
+	public double getCircleDeltaAlpha() {
+		return deltaPrimePhi;
+	}
+
+	/**
+	 * Returns the exact length of this small-circle arc.
+	 *
+	 * <p>In the primed frame the curve has constant circle radius
+	 * {@code R sin(thetaStar)} and signed angular sweep
+	 * {@code deltaPrimePhi}. Rotation back to the original frame preserves
+	 * length, so numerical integration is unnecessary.</p>
+	 *
+	 * @return arc length in the same units as the sphere radius
+	 */
+	@Override
+	public double arcLength() {
+		return getCircleRadius() * Math.abs(deltaPrimePhi);
+	}
+
+	// -----------------------------------------------------------------------
 	// Private helpers
 	// -----------------------------------------------------------------------
 
@@ -501,7 +615,7 @@ public class GeneralCurve extends BaseCurve {
 		}
 	    thetaCrossings = new ArrayList<>();
 
-	    SphericalGrid grid = ChimeraApp.getInstance().getSphericalGrid();
+	    SphericalGrid grid = ChimeraGridContext.sphericalGrid();
 	    Grid1D thetaGrid = grid.getThetaGrid();
 
 	    /*
@@ -806,7 +920,7 @@ public class GeneralCurve extends BaseCurve {
 	        return phiCrossings;
 	    }
 
-	    SphericalGrid grid = ChimeraApp.getInstance().getSphericalGrid();
+	    SphericalGrid grid = ChimeraGridContext.sphericalGrid();
 	    Grid1D phiGrid = grid.getPhiGrid();
 
 	    for (int i = 0; i < phiGrid.numPoints(); i++) {

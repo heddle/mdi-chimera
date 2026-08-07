@@ -7,9 +7,9 @@ import edu.cnu.mdi.ui.colors.ScientificColorMap;
 /**
  * Heuristic color assignment for Monte Carlo patches.
  * <p>
- * During the Monte Carlo stage the exact patch objects and adjacency graph do
- * not yet exist. This class therefore assigns colors directly from the five
- * indices:
+ * Monte Carlo points are colored without consulting the analytic patch objects
+ * or an adjacency graph. This class therefore assigns colors directly from the
+ * five indices:
  * </p>
  *
  * <pre>

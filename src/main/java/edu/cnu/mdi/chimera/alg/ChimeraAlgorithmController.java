@@ -32,10 +32,10 @@ public final class ChimeraAlgorithmController {
     /**
      * Runs the currently implemented algorithm synchronously.
      * <p>
-     * This is fine for the current step-1 implementation. When later stages
-     * become heavier, this method can be replaced or complemented by a
-     * SwingWorker-based asynchronous run method without changing the algorithm
-     * result/model structure.
+     * The complete intersection, theta-splice, and phi-splice pipeline currently
+     * runs synchronously. If larger grids make UI latency unacceptable, this
+     * method can be complemented by a SwingWorker-based runner without changing
+     * the algorithm result/model structure.
      * </p>
      *
      * @return {@code true} if the run succeeded

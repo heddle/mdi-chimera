@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/heddle/mdi-chimera/schema/mdi-chimera-patches-v1.schema.json",
+  "title": "MDI Chimera final patches",
+  "type": "object",
+  "required": ["format", "version", "conventions", "grid", "summary", "patches"],
+  "properties": {
+    "format": { "const": "mdi-chimera-patches" },
+    "version": { "const": 1 },
+    "conventions": { "$ref": "#/$defs/conventions" },
+    "grid": { "$ref": "#/$defs/grid" },
+    "summary": { "$ref": "#/$defs/summary" },
+    "patches": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/patch" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "number": { "type": "number" },
+    "vector3": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/number" },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "numberArray": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/number" },
+      "minItems": 2
+    },
+    "conventions": {
+      "type": "object",
+      "required": ["lengthUnit", "coordinateSystem", "angleUnit", "theta",
+        "phi", "phiRange", "curveParameterRange", "boundaryOrientation"],
+      "properties": {
+        "lengthUnit": { "type": "string" },
+        "coordinateSystem": { "type": "string" },
+        "angleUnit": { "const": "RADIANS" },
+        "theta": { "const": "COLATITUDE_FROM_POSITIVE_Z" },
+        "phi": { "const": "AZIMUTH_FROM_POSITIVE_X_TOWARD_POSITIVE_Y" },
+        "phiRange": { "$ref": "#/$defs/numberArray" },
+        "curveParameterRange": { "$ref": "#/$defs/numberArray" },
+        "boundaryOrientation": { "const": "ORDERED_DIRECTED_CLOSED_LOOP" }
+      },
+      "additionalProperties": false
+    },
+    "grid": {
+      "type": "object",
+      "required": ["name", "sphere", "cartesian", "spherical"],
+      "properties": {
+        "name": { "type": "string" },
+        "sphere": {
+          "type": "object",
+          "required": ["center", "radius"],
+          "properties": {
+            "center": { "$ref": "#/$defs/vector3" },
+            "radius": { "type": "number", "exclusiveMinimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "cartesian": {
+          "type": "object",
+          "required": ["xVertices", "yVertices", "zVertices", "offset"],
+          "properties": {
+            "xVertices": { "$ref": "#/$defs/numberArray" },
+            "yVertices": { "$ref": "#/$defs/numberArray" },
+            "zVertices": { "$ref": "#/$defs/numberArray" },
+            "offset": { "$ref": "#/$defs/vector3" }
+          },
+          "additionalProperties": false
+        },
+        "spherical": {
+          "type": "object",
+          "required": ["thetaVertices", "phiVertices"],
+          "properties": {
+            "thetaVertices": { "$ref": "#/$defs/numberArray" },
+            "phiVertices": { "$ref": "#/$defs/numberArray" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "summary": {
+      "type": "object",
+      "required": ["intersectingCellCount", "kissCellCount", "patchCount",
+        "normalizedAreaFraction", "physicalAreaEstimate", "totalPerimeter"],
+      "properties": {
+        "intersectingCellCount": { "type": "integer", "minimum": 0 },
+        "kissCellCount": { "type": "integer", "minimum": 0 },
+        "patchCount": { "type": "integer", "minimum": 0 },
+        "normalizedAreaFraction": { "type": "number", "minimum": 0 },
+        "physicalAreaEstimate": { "type": "number", "minimum": 0 },
+        "totalPerimeter": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "patch": {
+      "type": "object",
+      "required": ["id", "indices", "diagnostics", "boundary"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 0 },
+        "indices": {
+          "type": "object",
+          "required": ["nx", "ny", "nz", "nTheta", "nPhi"],
+          "properties": {
+            "nx": { "type": "integer", "minimum": 0 },
+            "ny": { "type": "integer", "minimum": 0 },
+            "nz": { "type": "integer", "minimum": 0 },
+            "nTheta": { "type": "integer", "minimum": 0 },
+            "nPhi": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "diagnostics": {
+          "type": "object",
+          "required": ["normalizedAreaFraction", "physicalAreaEstimate",
+            "perimeter", "enclosesNorthPole", "enclosesSouthPole",
+            "maximumClosureError"],
+          "properties": {
+            "normalizedAreaFraction": { "type": "number", "minimum": 0 },
+            "physicalAreaEstimate": { "type": "number", "minimum": 0 },
+            "perimeter": { "type": "number", "minimum": 0 },
+            "enclosesNorthPole": { "type": "boolean" },
+            "enclosesSouthPole": { "type": "boolean" },
+            "maximumClosureError": { "type": "number", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "boundary": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/curve" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "curve": {
+      "oneOf": [
+        { "$ref": "#/$defs/thetaCurve" },
+        { "$ref": "#/$defs/phiCurve" },
+        { "$ref": "#/$defs/generalCurve" }
+      ]
+    },
+    "curveEndpoints": {
+      "type": "object",
+      "required": ["type", "start", "end"]
+    },
+    "thetaCurve": {
+      "type": "object",
+      "required": ["type", "start", "end", "theta", "phi0", "deltaPhi"],
+      "properties": {
+        "type": { "const": "THETA" },
+        "start": { "$ref": "#/$defs/vector3" },
+        "end": { "$ref": "#/$defs/vector3" },
+        "theta": { "type": "number" },
+        "phi0": { "type": "number" },
+        "deltaPhi": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "phiCurve": {
+      "type": "object",
+      "required": ["type", "start", "end", "phi", "theta0", "deltaTheta"],
+      "properties": {
+        "type": { "const": "PHI" },
+        "start": { "$ref": "#/$defs/vector3" },
+        "end": { "$ref": "#/$defs/vector3" },
+        "phi": { "type": "number" },
+        "theta0": { "type": "number" },
+        "deltaTheta": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "generalCurve": {
+      "type": "object",
+      "required": ["type", "start", "end", "center", "radius", "basisU",
+        "basisV", "alpha0", "deltaAlpha"],
+      "properties": {
+        "type": { "const": "GENERAL" },
+        "start": { "$ref": "#/$defs/vector3" },
+        "end": { "$ref": "#/$defs/vector3" },
+        "center": { "$ref": "#/$defs/vector3" },
+        "radius": { "type": "number", "minimum": 0 },
+        "basisU": { "$ref": "#/$defs/vector3" },
+        "basisV": { "$ref": "#/$defs/vector3" },
+        "alpha0": { "type": "number" },
+        "deltaAlpha": { "type": "number" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

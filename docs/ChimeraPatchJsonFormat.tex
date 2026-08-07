@@ -1,0 +1,724 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage[hidelinks]{hyperref}
+
+\definecolor{codeblue}{RGB}{25,80,135}
+\definecolor{codegreen}{RGB}{30,120,65}
+\definecolor{codegray}{RGB}{90,90,90}
+\definecolor{codebackground}{RGB}{247,247,247}
+
+\lstdefinelanguage{json}{
+  basicstyle=\ttfamily\small,
+  numbers=left,
+  numberstyle=\tiny\color{codegray},
+  stepnumber=1,
+  numbersep=8pt,
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{codebackground},
+  string=[s]{\"}{\"},
+  stringstyle=\color{codegreen},
+  literate=
+   *{0}{{{\color{codeblue}0}}}{1}
+    {1}{{{\color{codeblue}1}}}{1}
+    {2}{{{\color{codeblue}2}}}{1}
+    {3}{{{\color{codeblue}3}}}{1}
+    {4}{{{\color{codeblue}4}}}{1}
+    {5}{{{\color{codeblue}5}}}{1}
+    {6}{{{\color{codeblue}6}}}{1}
+    {7}{{{\color{codeblue}7}}}{1}
+    {8}{{{\color{codeblue}8}}}{1}
+    {9}{{{\color{codeblue}9}}}{1}
+}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  numbers=left,
+  numberstyle=\tiny\color{codegray},
+  numbersep=8pt,
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{codebackground},
+  keywordstyle=\color{codeblue}\bfseries,
+  commentstyle=\color{codegray}\itshape,
+  stringstyle=\color{codegreen}
+}
+
+\newcommand{\field}[1]{\texttt{#1}}
+\newcommand{\vect}[1]{\boldsymbol{#1}}
+\newcommand{\R}{\mathbb{R}}
+
+\title{MDI Chimera Final-Patch JSON Interchange Format\\
+       \large Version 1: Reference and Area-Computation Guide}
+\author{MDI Chimera Project}
+\date{\today}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Purpose and scope}
+
+This document describes version~1 of the JSON interchange format produced by
+MDI Chimera.  The format is intended to let an independent program reproduce
+the final intersection patches between a Cartesian volume grid and a spherical
+surface grid.  In particular, it is designed to support independent computation
+of patch areas.
+
+The file is not a serialization of Java implementation objects.  It is a
+language-neutral geometric description containing:
+
+\begin{itemize}[nosep]
+  \item the coordinate conventions and units;
+  \item the complete Cartesian and spherical grids;
+  \item one zero-based five-tuple of grid indices for every final patch;
+  \item an ordered, directed, closed boundary for every patch;
+  \item exact parametric descriptions of all boundary-curve types; and
+  \item numerical diagnostics computed by Chimera for comparison.
+\end{itemize}
+
+The authoritative machine-readable definition is
+\field{mdi-chimera-patches-v1.schema.json}, distributed with Chimera.  A reader
+should check both the root \,\field{format}\, and \,\field{version}\, fields before
+interpreting the remainder of the document.
+
+\section{Coordinate conventions}
+
+Version~1 currently uses the GSM coordinate system and Earth radii as its
+length unit, although both values are stated explicitly in the file.  All
+three-component arrays are ordered
+\[
+  [x,y,z].
+\]
+All angular quantities are in radians.
+
+On a sphere of radius $R$ centered at the origin, Chimera uses colatitude
+$\theta$ and azimuth $\phi$:
+\begin{align}
+  x &= R\sin\theta\cos\phi,\\
+  y &= R\sin\theta\sin\phi,\\
+  z &= R\cos\theta.
+\end{align}
+Thus $\theta=0$ is the positive-$z$ (north) pole, $\theta=\pi/2$ is the
+equator, and $\theta=\pi$ is the negative-$z$ (south) pole.  The azimuth $\phi$
+is measured in the $x$--$y$ plane from positive $x$ toward positive $y$ and is
+normally reported in $[-\pi,\pi]$.
+
+Every curve has a parameter $t\in[0,1]$.  A curve is \emph{directed}: $t=0$
+is its start and $t=1$ is its end.  Signed angular increments must never be
+replaced blindly by absolute values or normalized to a short arc.
+
+\section{Top-level organization}
+
+An abbreviated file has the following form.
+
+\begin{lstlisting}[language=json,caption={Abbreviated version-1 document}]
+{
+  "format" : "mdi-chimera-patches",
+  "version" : 1,
+  "conventions" : { ... },
+  "grid" : { ... },
+  "summary" : { ... },
+  "patches" : [
+    {
+      "id" : 0,
+      "indices" : {
+        "nx" : 1, "ny" : 2, "nz" : 3,
+        "nTheta" : 4, "nPhi" : 5
+      },
+      "diagnostics" : { ... },
+      "boundary" : [ ... directed curves ... ]
+    }
+  ]
+}
+\end{lstlisting}
+
+\subsection{Root fields}
+
+\begin{longtable}{>{\ttfamily}p{0.21\textwidth}p{0.13\textwidth}p{0.58\textwidth}}
+\toprule
+\normalfont Field & Type & Meaning \\
+\midrule
+\endhead
+format & string & Must equal \field{mdi-chimera-patches}. \\
+version & integer & Must equal $1$ for the format described here. \\
+conventions & object & Units, angular definitions, and traversal conventions. \\
+grid & object & Complete input-grid definition. \\
+summary & object & File-wide counts and numerical diagnostics. \\
+patches & array & Final patches.  Array order determines the exported IDs. \\
+\bottomrule
+\end{longtable}
+
+\subsection{The conventions object}
+
+\begin{longtable}{>{\ttfamily}p{0.27\textwidth}p{0.65\textwidth}}
+\toprule
+\normalfont Field & Version-1 interpretation \\
+\midrule
+\endhead
+lengthUnit & Currently \field{EARTH\_RADII}.  All Cartesian lengths, radii,
+and perimeters use this unit. \\
+coordinateSystem & Currently \field{GSM}. \\
+angleUnit & \field{RADIANS}. \\
+theta & \field{COLATITUDE\_FROM\_POSITIVE\_Z}. \\
+phi & \field{AZIMUTH\_FROM\_POSITIVE\_X\_TOWARD\_POSITIVE\_Y}. \\
+phiRange & Normally $[-\pi,\pi]$. \\
+curveParameterRange & $[0,1]$. \\
+boundaryOrientation & \field{ORDERED\_DIRECTED\_CLOSED\_LOOP}. \\
+\bottomrule
+\end{longtable}
+
+\section{Grid definition}
+
+\subsection{Sphere}
+
+The \,\field{grid.sphere}\, object contains a three-vector \,\field{center}\,
+and scalar \,\field{radius}.  Version~1 readers should require the center to be
+the origin.  The radius $R$ is used in every curve and area formula.
+
+\subsection{Cartesian grid}
+
+The arrays \,\field{xVertices}, \,\field{yVertices}, and \,\field{zVertices}
+contain strictly increasing local grid coordinates.  If
+\[
+  \vect{o}=(o_x,o_y,o_z)=\field{offset},
+\]
+then the global coordinate of a vertex is its stored coordinate plus the
+corresponding offset.  For example, Cartesian cell $n_x=i$ occupies
+\[
+  x_i+o_x \le x < x_{i+1}+o_x,
+\]
+with the usual inclusion of the final upper boundary.  The $y$ and $z$ axes
+are analogous.  With $N_x$ vertices there are $N_x-1$ cells and valid indices
+are $0,\ldots,N_x-2$.
+
+\subsection{Spherical grid}
+
+The arrays \,\field{thetaVertices}\, and \,\field{phiVertices}\, are strictly
+increasing.  The theta array spans $[0,\pi]$ and the phi array spans
+$[-\pi,\pi]$.  Spherical cell $(n_\theta,n_\phi)=(j,k)$ is bounded by
+\begin{align}
+  \theta_j &\le \theta < \theta_{j+1},\\
+  \phi_k &\le \phi < \phi_{k+1},
+\end{align}
+again treating the final upper endpoint as part of the last cell.
+
+\section{Patches and the five-tuple}
+
+Each patch contains the indices
+\[
+  (n_x,n_y,n_z,n_\theta,n_\phi).
+\]
+They are zero-based indices into the four grid-vertex arrays.  The five-tuple
+identifies the Cartesian volume cell and spherical surface cell whose
+intersection is the patch.  Within a valid completed Chimera result, five-tuples
+are unique.
+
+The \,\field{boundary}\, array is not an unordered set.  If it contains curves
+$C_0,\ldots,C_{m-1}$, they must be traversed in that order, and
+\[
+  C_i(1)=C_{i+1}(0),\qquad
+  C_{m-1}(1)=C_0(0),
+\]
+up to floating-point tolerance.  Changing order, independently reversing
+curves, or discarding signs destroys the boundary topology.
+
+The integer \,\field{id}\, is a convenient file-local identifier.  It is not a
+geometric invariant and should not be expected to remain stable if patches are
+regenerated with a different Chimera version or ordering rule.
+
+\section{Curve representations}
+
+Every curve object contains:
+\begin{itemize}[nosep]
+  \item a string discriminator \,\field{type};
+  \item Cartesian \,\field{start}\, and \,\field{end}\, points; and
+  \item the parameters required to reconstruct the analytic path.
+\end{itemize}
+The endpoints support topology and validation.  The type-specific parameters
+define the path between them.  A reader should verify that evaluating those
+parameters at $t=0$ and $t=1$ reproduces the supplied endpoints.
+
+\subsection{THETA: constant-colatitude arcs}
+
+Fields are \,\field{theta}, \,\field{phi0}, and signed \,\field{deltaPhi}.
+Define
+\begin{align}
+  \theta(t)&=\theta_*,\\
+  \phi(t)&=\phi_0+t\,\Delta\phi.
+\end{align}
+The Cartesian curve follows from the spherical-to-Cartesian equations in
+Section~2.  Its exact length is
+\[
+  L=R\sin\theta_*\,|\Delta\phi|.
+\]
+A value $|\Delta\phi|>\pi$ is a legitimate complementary long arc, especially
+in polar topology.  Do not normalize it to $(-\pi,\pi]$.
+
+\subsection{PHI: constant-azimuth arcs}
+
+Fields are \,\field{phi}, \,\field{theta0}, and signed
+\,\field{deltaTheta}.  Define
+\begin{align}
+  \theta(t)&=\theta_0+t\,\Delta\theta,\\
+  \phi(t)&=\phi_*.
+\end{align}
+Its exact length is
+\[
+  L=R|\Delta\theta|.
+\]
+At a pole, Cartesian coordinates do not determine azimuth.  The exported
+\field{phi} value is therefore essential: it specifies the limiting meridian.
+
+\subsection{GENERAL: Cartesian-face/sphere intersection arcs}
+
+A GENERAL curve is an arc of the small circle obtained by intersecting the
+sphere with a Cartesian cell-face plane.  Its fields are
+\field{center}, \,\field{radius}, \,\field{basisU}, \,\field{basisV},
+\field{alpha0}, and signed \,\field{deltaAlpha}.  To avoid confusion with the
+sphere radius $R$, denote the JSON curve radius by $\rho$.
+
+Let
+\[
+  \vect{c}=\field{center},\quad
+  \vect{u}=\field{basisU},\quad
+  \vect{v}=\field{basisV},\quad
+  \alpha(t)=\alpha_0+t\,\Delta\alpha.
+\]
+Then
+\begin{equation}
+  \boxed{
+  \vect{p}(t)=\vect{c}+\rho\left[
+      \vect{u}\cos\alpha(t)+\vect{v}\sin\alpha(t)
+  \right].}
+  \label{eq:general-curve}
+\end{equation}
+The vectors $\vect{u}$ and $\vect{v}$ are orthonormal.  Their cross product is
+the oriented normal to the circle plane.  The exact derivative is
+\begin{equation}
+  \vect{p}'(t)=\rho\,\Delta\alpha\left[
+      -\vect{u}\sin\alpha(t)+\vect{v}\cos\alpha(t)
+  \right],
+  \label{eq:general-derivative}
+\end{equation}
+and the exact arc length is
+\[
+  L=\rho|\Delta\alpha|.
+\]
+
+Useful consistency checks are
+\begin{align}
+  \|\vect{u}\|&=\|\vect{v}\|=1, &
+  \vect{u}\cdot\vect{v}&=0,\\
+  \|\vect{p}(t)\|&=R, &
+  \vect{p}(0)&=\field{start},\quad
+  \vect{p}(1)=\field{end}.
+\end{align}
+
+\section{Diagnostics}
+
+Each patch has a \,\field{diagnostics}\, object.
+
+\begin{longtable}{>{\ttfamily}p{0.29\textwidth}p{0.63\textwidth}}
+\toprule
+\normalfont Field & Meaning \\
+\midrule
+\endhead
+normalizedAreaFraction & Chimera's numerical estimate of $A/(4\pi R^2)$. \\
+physicalAreaEstimate & The same estimate multiplied by $4\pi R^2$. \\
+perimeter & Sum of exact analytic curve lengths in the declared length unit. \\
+enclosesNorthPole & Whether Chimera classifies the patch as enclosing or touching
+the north pole. \\
+enclosesSouthPole & Analogous south-pole flag. \\
+maximumClosureError & Maximum Cartesian distance between the end of one curve
+and the start of its successor. \\
+\bottomrule
+\end{longtable}
+
+The area values are reference diagnostics, not exact answers.  Chimera
+currently samples every boundary curve and estimates spherical polygon area by
+triangulation.  They are useful for regression comparisons, but an independent
+area calculation should be compared against them rather than defined by them.
+
+The root \,\field{summary}\, contains corresponding totals.  In particular,
+\field{normalizedAreaFraction} is the sum over final patches and should be near
+$1$ for complete coverage.  The field \,\field{intersectingCellCount}\, counts
+ordinary non-KISS intersecting cells; \,\field{kissCellCount}\, is separate.
+KISS cells are a known special case and do not currently generate ordinary
+patches.
+
+\section{Recommended area calculation}
+
+\subsection{Archimedes/Lambert cylindrical equal-area coordinates}
+
+The most useful coordinates for this project are
+\begin{equation}
+  X=\widetilde{\phi},\qquad Y=\cos\theta=\frac{z}{R},
+  \label{eq:equal-area-map}
+\end{equation}
+where $\widetilde{\phi}$ is a continuously unwrapped azimuth along the directed
+boundary.  Since
+\[
+  dY=-\sin\theta\,d\theta,
+\]
+the spherical area element satisfies
+\[
+  dA=R^2\sin\theta\,d\theta\,d\phi
+     =-R^2\,dX\,dY.
+\]
+Therefore the magnitude of spherical patch area equals $R^2$ times the planar
+area enclosed in the $(X,Y)$ equal-area plane.
+
+Green's theorem gives either of the equivalent formulas
+\begin{align}
+  A &= R^2\left|\oint_{\partial P} X\,dY\right|,
+  \label{eq:xdy-area}\\
+  A &= \frac{R^2}{2}\left|\oint_{\partial P}
+          \left(X\,dY-Y\,dX\right)\right|.
+  \label{eq:symmetric-area}
+\end{align}
+Equation~\eqref{eq:xdy-area} is especially attractive here: THETA curves make
+zero contribution because $Y$ is constant, PHI curves have a closed-form
+contribution, and GENERAL curves require only a smooth one-dimensional
+integral.
+
+Do not assume that every exported loop has the same clockwise/counterclockwise
+sign in the projected plane.  Compute a signed integral for diagnostics, but
+use its absolute value for an individual patch area unless orientation has been
+independently established.
+
+\subsection{Curve contributions to $\oint X\,dY$}
+
+For a THETA curve, $Y=\cos\theta_*$ is constant, so
+\[
+  I_\theta=\int_C X\,dY=0.
+\]
+
+For a PHI curve with a continuously selected meridian value
+$X=\widetilde{\phi}_*$,
+\begin{equation}
+  I_\phi=\widetilde{\phi}_*
+  \left[\cos(\theta_0+\Delta\theta)-\cos\theta_0\right].
+  \label{eq:phi-contribution}
+\end{equation}
+
+For a GENERAL curve, let $p_x(t),p_y(t),p_z(t)$ be obtained from
+Equation~\eqref{eq:general-curve}.  Then
+\begin{align}
+  X(t)&=\operatorname{unwrap}\!\left(\operatorname{atan2}
+           (p_y(t),p_x(t))\right),\\
+  Y(t)&=\frac{p_z(t)}{R},\\
+  \frac{dY}{dt}&=\frac{p'_z(t)}{R},
+\end{align}
+with $p'_z$ available analytically from
+Equation~\eqref{eq:general-derivative}.  Its contribution is
+\begin{equation}
+  I_g=\int_0^1 X(t)\frac{p'_z(t)}{R}\,dt.
+  \label{eq:general-contribution}
+\end{equation}
+
+Even if a compact symbolic antiderivative for Equation~\eqref{eq:general-contribution}
+is inconvenient, evaluating this single analytic boundary integral with
+adaptive high-order quadrature is fundamentally different from polygonizing
+the entire patch.  It preserves exact curve geometry, provides controlled
+error, and is an excellent reference against which a later symbolic result can
+be tested.
+
+\subsection{Unwrapping azimuth correctly}
+
+Azimuth unwrapping is the most likely source of a large area error.
+
+\begin{enumerate}
+  \item Process curves in their exported boundary order.
+  \item Preserve the explicit signed increments on THETA curves.
+  \item For sampled or evaluated GENERAL-curve azimuths, add or subtract
+        $2\pi$ whenever necessary to maintain continuity with the preceding
+        boundary value.
+  \item Use the patch's $n_\phi$ interval as an additional consistency check.
+        A final patch should occupy one phi band, modulo the identified seam.
+  \item At a pole, do not obtain azimuth from \field{atan2(0,0)}.  Use the
+        limiting azimuth supplied by the incident PHI or THETA curve.
+\end{enumerate}
+
+It is safest to perform the calculation in an \emph{unwrapped} Archimedes
+plane.  Do not compute area from a display polygon that has been wrapped,
+clipped, or split at the map seam.
+
+\section{Suggested implementation strategy}
+
+The following progression makes failures easier to localize.
+
+\begin{enumerate}
+  \item Parse and validate the root format and version.
+  \item Validate the grid arrays, sphere radius, and all index ranges.
+  \item Reconstruct every curve and verify its two endpoints.
+  \item Verify ordered loop closure before attempting any area calculation.
+  \item Implement exact THETA and PHI contributions.
+  \item Implement Equation~\eqref{eq:general-contribution} using adaptive
+        quadrature and explicit azimuth unwrapping.
+  \item Compare each result with \,\field{physicalAreaEstimate}\, and record
+        absolute and relative differences.  Small patches require an absolute
+        tolerance as well as a relative one.
+  \item Sum all computed areas and compare with $4\pi R^2$.  Report KISS-cell
+        counts alongside this comparison.
+  \item Only after the numerical boundary-integral implementation is stable,
+        pursue closed-form simplification of the GENERAL contribution if that
+        remains a project goal.
+\end{enumerate}
+
+Recommended test cases include ordinary nonpolar patches, north- and
+south-polar patches, patches adjacent to $\phi=\pm\pi$, boundaries containing a
+long THETA arc, very small patches, and reversed synthetic curves for checking
+sign handling.
+
+\section{Minimal Java reader and reconstruction example}
+
+Java~17 does not include a JSON parser in the standard library.  The following
+example uses Jackson, the same library used by Chimera.  Add this dependency to
+the student's Maven project (or use a compatible newer Jackson 2.x release).
+
+\begin{lstlisting}[language=XML,caption={Maven dependency for the example}]
+<dependency>
+  <groupId>com.fasterxml.jackson.core</groupId>
+  <artifactId>jackson-databind</artifactId>
+  <version>2.17.2</version>
+</dependency>
+\end{lstlisting}
+
+Listing~\ref{lst:java-reader} reads the document as a Jackson tree.  This keeps
+the example compact while retaining explicit validation and type dispatch.  A
+larger application may replace the tree with records or classes after the file
+format is understood.  Production code should additionally validate against
+the supplied JSON Schema.
+
+\begin{lstlisting}[language=Java,caption={Java 17 parser, curve evaluator, and closure check},label={lst:java-reader}]
+import java.io.IOException;
+import java.nio.file.Path;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+public final class ChimeraPatchReader {
+
+    private static final double TOLERANCE = 1.0e-7;
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    private ChimeraPatchReader() { }
+
+    public static void main(String[] args) throws IOException {
+        Path input = Path.of(args.length == 0
+                ? "Paper-Test-Grid-patches.json" : args[0]);
+        JsonNode document = JSON.readTree(input.toFile());
+
+        require("mdi-chimera-patches".equals(
+                document.path("format").asText()),
+                "Not an MDI Chimera patch file");
+        require(document.path("version").asInt(-1) == 1,
+                "Unsupported Chimera patch version");
+
+        double sphereRadius = document.path("grid").path("sphere")
+                .path("radius").asDouble(Double.NaN);
+        require(Double.isFinite(sphereRadius) && sphereRadius > 0.0,
+                "Invalid sphere radius");
+
+        JsonNode patches = document.path("patches");
+        require(patches.isArray(), "patches must be an array");
+
+        for (JsonNode patch : patches) {
+            validatePatch(patch, sphereRadius);
+        }
+
+        System.out.printf("Read and validated %,d final patches.%n",
+                patches.size());
+    }
+
+    private static void validatePatch(JsonNode patch, double sphereRadius) {
+        int patchId = patch.path("id").asInt(-1);
+        JsonNode boundary = patch.path("boundary");
+        require(boundary.isArray() && boundary.size() >= 2,
+                "Patch " + patchId + " has an incomplete boundary");
+
+        for (int i = 0; i < boundary.size(); i++) {
+            JsonNode curve = boundary.get(i);
+            JsonNode next = boundary.get((i + 1) % boundary.size());
+
+            double[] exportedStart = vector(curve, "start");
+            double[] exportedEnd = vector(curve, "end");
+            double[] nextStart = vector(next, "start");
+            double[] reconstructedStart = evaluate(curve, 0.0,
+                    sphereRadius);
+            double[] reconstructedEnd = evaluate(curve, 1.0,
+                    sphereRadius);
+
+            require(distance(exportedStart, reconstructedStart) <= TOLERANCE,
+                    "Curve parameters do not reproduce the start point");
+            require(distance(exportedEnd, reconstructedEnd) <= TOLERANCE,
+                    "Curve parameters do not reproduce the end point");
+            require(distance(exportedEnd, nextStart) <= TOLERANCE,
+                    "Patch " + patchId + " is open at curve " + i);
+            require(Math.abs(norm(exportedStart) - sphereRadius)
+                    <= TOLERANCE, "Curve start is not on the sphere");
+        }
+    }
+
+    public static double[] evaluate(JsonNode curve, double t,
+            double sphereRadius) {
+        require(t >= 0.0 && t <= 1.0, "t is outside [0,1]");
+        String type = curve.path("type").asText();
+
+        return switch (type) {
+        case "THETA" -> {
+            double theta = number(curve, "theta");
+            double phi = number(curve, "phi0")
+                    + t * number(curve, "deltaPhi");
+            yield sphericalPoint(sphereRadius, theta, phi);
+        }
+        case "PHI" -> {
+            double theta = number(curve, "theta0")
+                    + t * number(curve, "deltaTheta");
+            yield sphericalPoint(sphereRadius, theta,
+                    number(curve, "phi"));
+        }
+        case "GENERAL" -> {
+            double[] center = vector(curve, "center");
+            double[] u = vector(curve, "basisU");
+            double[] v = vector(curve, "basisV");
+            double rho = number(curve, "radius");
+            double alpha = number(curve, "alpha0")
+                    + t * number(curve, "deltaAlpha");
+            double cosine = Math.cos(alpha);
+            double sine = Math.sin(alpha);
+            yield new double[] {
+                center[0] + rho * (u[0] * cosine + v[0] * sine),
+                center[1] + rho * (u[1] * cosine + v[1] * sine),
+                center[2] + rho * (u[2] * cosine + v[2] * sine)
+            };
+        }
+        default -> throw new IllegalArgumentException(
+                "Unknown curve type: " + type);
+        };
+    }
+
+    private static double[] sphericalPoint(double radius, double theta,
+            double phi) {
+        double sinTheta = Math.sin(theta);
+        return new double[] {
+            radius * sinTheta * Math.cos(phi),
+            radius * sinTheta * Math.sin(phi),
+            radius * Math.cos(theta)
+        };
+    }
+
+    private static double number(JsonNode object, String field) {
+        double value = object.path(field).asDouble(Double.NaN);
+        require(Double.isFinite(value), field + " is missing or non-finite");
+        return value;
+    }
+
+    private static double[] vector(JsonNode object, String field) {
+        JsonNode value = object.path(field);
+        require(value.isArray() && value.size() == 3,
+                field + " must contain three numbers");
+        return new double[] {
+            finite(value.get(0).asDouble(Double.NaN), field),
+            finite(value.get(1).asDouble(Double.NaN), field),
+            finite(value.get(2).asDouble(Double.NaN), field)
+        };
+    }
+
+    private static double finite(double value, String label) {
+        require(Double.isFinite(value), label + " contains a non-finite value");
+        return value;
+    }
+
+    private static double norm(double[] value) {
+        return Math.sqrt(value[0] * value[0]
+                + value[1] * value[1] + value[2] * value[2]);
+    }
+
+    private static double distance(double[] a, double[] b) {
+        double dx = a[0] - b[0];
+        double dy = a[1] - b[1];
+        double dz = a[2] - b[2];
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    private static void require(boolean condition, String message) {
+        if (!condition) {
+            throw new IllegalArgumentException(message);
+        }
+    }
+}
+\end{lstlisting}
+
+The example deliberately preserves every signed angular increment.  The next
+step for the student is to retain the parsed boundary order and apply
+Equations~\eqref{eq:phi-contribution} and
+\eqref{eq:general-contribution} to those same curve objects.  In a production
+reader, also validate five-tuple ranges and uniqueness, GENERAL-curve basis
+orthonormality, and the complete grid arrays as described below.
+
+\section{Validation checklist}
+
+Before trusting computed areas, verify all of the following.
+
+\begin{itemize}[label=$\square$]
+  \item Root format is \,\field{mdi-chimera-patches}\, and version is $1$.
+  \item All required numerical values are finite.
+  \item Grid arrays are strictly increasing and span their declared domains.
+  \item The sphere is centered at the origin and has positive radius.
+  \item Every five-tuple is in range and unique.
+  \item Every boundary contains at least two curves.
+  \item Every analytic curve reproduces its exported start and end.
+  \item GENERAL bases are unit length and mutually orthogonal.
+  \item Every endpoint lies on the sphere within tolerance.
+  \item Every curve end matches the next curve start, including loop closure.
+  \item Signed angular sweeps are preserved without unwanted normalization.
+  \item Azimuth is continuous after unwrapping, including seam and pole cases.
+  \item Per-patch areas are nonnegative and finite.
+  \item The sum of areas is compared with both Chimera's exported total and
+        $4\pi R^2$.
+\end{itemize}
+
+\section{Interpretation of discrepancies}
+
+A discrepancy localized to seam-adjacent patches usually indicates incorrect
+azimuth unwrapping.  A discrepancy localized to polar patches usually indicates
+that azimuth was inferred from a pole's Cartesian coordinates rather than from
+the incident meridian.  Errors only on long THETA arcs usually indicate that a
+signed sweep was normalized to its short complement.  Widespread small errors
+that shrink with tighter quadrature tolerance suggest integration error;
+widespread errors that do not shrink suggest a convention or scale error.
+
+For each comparison, retain the patch ID, five-tuple, signed integral, absolute
+area, Chimera estimate, absolute difference, relative difference, pole flags,
+and seam-adjacency status.  That diagnostic table will make the eventual report
+far more useful than a single global error number.
+
+\section{Final advice}
+
+Treat topology and integration as separate problems.  First prove that the
+ordered directed loop has been reconstructed correctly; only then integrate it.
+Start with a controlled numerical evaluation of the exact boundary formulas,
+because it provides a high-quality benchmark for any later symbolic derivation.
+Use Chimera's diagnostics as independent comparisons, not as values to copy.
+Finally, preserve failing patch IDs and five-tuples: the difficult seam, pole,
+and near-degenerate cases are the most scientifically valuable tests of the
+method.
+
+\end{document}

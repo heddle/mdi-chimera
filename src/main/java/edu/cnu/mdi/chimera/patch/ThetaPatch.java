@@ -6,7 +6,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import edu.cnu.mdi.chimera.app.ChimeraApp;
 import edu.cnu.mdi.chimera.curve.BaseCurve;
 import edu.cnu.mdi.chimera.curve.Crossing;
 import edu.cnu.mdi.chimera.curve.GeneralCurve;
@@ -14,6 +13,7 @@ import edu.cnu.mdi.chimera.curve.ThetaCurve;
 import edu.cnu.mdi.chimera.grid.CartesianGrid;
 import edu.cnu.mdi.chimera.grid.Grid1D;
 import edu.cnu.mdi.chimera.grid.SphericalGrid;
+import edu.cnu.mdi.chimera.model.ChimeraGridContext;
 import edu.cnu.mdi.chimera.util.Point3D;
 
 /**
@@ -54,8 +54,8 @@ public class ThetaPatch extends BasePatch {
 
 	@Override
 	public boolean containsPoint(double x, double y, double z) {
-		CartesianGrid cartesianGrid = ChimeraApp.getInstance().getCartesianGrid();
-		SphericalGrid sphericalGrid = ChimeraApp.getInstance().getSphericalGrid();
+		CartesianGrid cartesianGrid = ChimeraGridContext.cartesianGrid();
+		SphericalGrid sphericalGrid = ChimeraGridContext.sphericalGrid();
 
 		int[] cart = cartesianGrid.getIndices(x, y, z, new int[3]);
 		if (cart[0] != nx || cart[1] != ny || cart[2] != nz) {
@@ -90,7 +90,7 @@ public class ThetaPatch extends BasePatch {
 	 * @return theta patches produced from the prepatch
 	 */
 	public static List<ThetaPatch> splice(PrePatch pre) {
-		SphericalGrid sphGrid = ChimeraApp.getInstance().getSphericalGrid();
+		SphericalGrid sphGrid = ChimeraGridContext.sphericalGrid();
 		ArrayList<ThetaPatch> result = new ArrayList<>();
 
 		List<Crossing> allCrossings = pre.getAllThetaCrossings();
@@ -272,6 +272,17 @@ public class ThetaPatch extends BasePatch {
 		Map<Integer, Integer> counts = new HashMap<>();
 
 		for (BaseCurve curve : pre.curves) {
+			boolean onThetaCut = false;
+			for (int i = 0; i < thetaGrid.numPoints(); i++) {
+				if (curveLiesOnThetaCut(curve, thetaGrid.valueAt(i))) {
+					onThetaCut = true;
+					break;
+				}
+			}
+			if (onThetaCut) {
+				continue;
+			}
+
 			double midTheta = curve.theta(0.5);
 			int idx = thetaGrid.locateInterval(midTheta);
 			if (idx >= 0) {
@@ -281,11 +292,6 @@ public class ThetaPatch extends BasePatch {
 
 		if (counts.isEmpty()) {
 			return thetaGrid.locateInterval(pre.curves.get(0).sv0.theta);
-		}
-
-		if (counts.size() > 1) {
-			System.err.printf("[ThetaPatch] bestThetaIndex: midpoints span %d theta cells "
-					+ "for prepatch (%d,%d,%d); using majority%n", counts.size(), pre.nx, pre.ny, pre.nz);
 		}
 
 		return counts.entrySet().stream().max(Map.Entry.comparingByValue()).get().getKey();
@@ -441,10 +447,9 @@ public class ThetaPatch extends BasePatch {
 			}
 
 			if (match == null) {
-				System.err.printf(
-						"[ThetaPatch] buildThetaConnectorPairs: unmatched crossing " + "for prepatch (%d,%d,%d): %s%n",
-						pre.nx, pre.ny, pre.nz, c.summaryString());
-				continue;
+				throw new IllegalStateException(String.format(
+						"Unmatched theta crossing for prepatch (%d,%d,%d): %s",
+						pre.nx, pre.ny, pre.nz, c.summaryString()));
 			}
 
 			Point3D.Double p0 = c.curve().getPoint(clamp01(c.t()));
@@ -557,23 +562,19 @@ public class ThetaPatch extends BasePatch {
 				}
 
 				if (!connected) {
-					System.err.printf(
-							"[ThetaPatch] assembleThetaPatches: could not connect curve %s "
-									+ "in prepatch (%d,%d,%d) with %d crossings%n",
-							c.shortString(), pre.nx, pre.ny, pre.nz, crossings.size());
-					break;
+					throw new IllegalStateException(String.format(
+							"Could not connect curve %s in prepatch (%d,%d,%d) "
+									+ "with %d crossings.",
+							c.shortString(), pre.nx, pre.ny, pre.nz, crossings.size()));
 				}
 
 				madeLoop = makesLoop(patchCurves);
 
 				if (madeLoop) {
-					try {
-						int thetaIndex = bestThetaIndexForLoop(patchCurves, sphGrid);
-						ThetaPatch patch = new ThetaPatch(patchCurves, pre.nx, pre.ny, pre.nz, thetaIndex);
-						result.add(patch);
-					} catch (IllegalArgumentException ex) {
-						System.err.printf("[ThetaPatch] assembleThetaPatches: %s%n", ex.getMessage());
-					}
+					int thetaIndex = bestThetaIndexForLoop(patchCurves, sphGrid);
+					ThetaPatch patch = new ThetaPatch(
+							patchCurves, pre.nx, pre.ny, pre.nz, thetaIndex);
+					result.add(patch);
 				}
 			}
 		}
@@ -730,20 +731,12 @@ public class ThetaPatch extends BasePatch {
 		throw new IllegalStateException("Could not determine theta index for theta-splice loop.");
 	}
 
-	boolean debug = (nx == 16 && ny == 16 && nz == 30 && nTheta == 0);
 	/**
 	 * Retrieves a list of all phi crossings across all curves in this theta patch.
 	 * Used to draw markers at phi crossings during the phi splice step.
 	 * @return list of all theta crossings in this prepatch
 	 */
 	public List<Crossing> getAllPhiCrossings() {
-		if (debug) {
-			System.out.println("[ThetaPatch] getAllPhiCrossings: patch (" + nx + "," + ny + "," + nz + "," + nTheta
-					+ ") has " + curves.size() + " curves.");
-			for (BaseCurve c : curves) {
-				System.out.println("  Curve " + c.shortString() + " has " + c.getPhiCrossings().size() + " phi crossings.");
-			}
-		}
 		List<Crossing> crossings = new ArrayList<>();
 		for (BaseCurve curve : curves) {
 			crossings.addAll(curve.getPhiCrossings());

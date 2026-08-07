@@ -6,7 +6,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import edu.cnu.mdi.chimera.app.ChimeraApp;
 import edu.cnu.mdi.chimera.curve.BaseCurve;
 import edu.cnu.mdi.chimera.curve.Crossing;
 import edu.cnu.mdi.chimera.curve.PhiCurve;
@@ -16,6 +15,7 @@ import edu.cnu.mdi.chimera.grid.SphericalGrid;
 import edu.cnu.mdi.chimera.util.MathUtil;
 import edu.cnu.mdi.chimera.util.Point3D;
 import edu.cnu.mdi.chimera.util.SphericalVector;
+import edu.cnu.mdi.chimera.model.ChimeraGridContext;
 
 /**
  * Represents a patch defined by the intersection of curves on a spherical grid.
@@ -48,8 +48,8 @@ public class Patch extends BasePatch {
 
 	@Override
 	public boolean containsPoint(double x, double y, double z) {
-		CartesianGrid cartesianGrid = ChimeraApp.getInstance().getCartesianGrid();
-		SphericalGrid sphericalGrid = ChimeraApp.getInstance().getSphericalGrid();
+		CartesianGrid cartesianGrid = ChimeraGridContext.cartesianGrid();
+		SphericalGrid sphericalGrid = ChimeraGridContext.sphericalGrid();
 
 		int[] cart = cartesianGrid.getIndices(x, y, z, new int[3]);
 		if (cart[0] != nx || cart[1] != ny || cart[2] != nz) {
@@ -64,35 +64,26 @@ public class Patch extends BasePatch {
 	/**
 	 * Slices a {@link ThetaPatch} along the spherical phi grid.
 	 *
-	 * @param theta the ThetaPatch to slice
-	 * @return full patches produced from the ThetaPatch, sliced along the spherical
-	 *         phi grid
+	 * <p>Interior crossings are paired on each meridian and receive two directed
+	 * {@link PhiCurve} connectors. The original boundary curves are split at those
+	 * crossings, then boundary fragments and connectors are assembled into closed
+	 * loops. Polar patches use crossing-to-pole connectors because phi is singular
+	 * at the pole; connector selection follows directed boundary order so a loop
+	 * closes exactly one phi wedge.</p>
+	 *
+	 * <p>Every returned patch preserves the Cartesian and theta indices of
+	 * {@code theta} and receives exactly one phi-cell index. If there are no genuine
+	 * crossings, the original loop is retained and assigned to its containing phi
+	 * band.</p>
+	 *
+	 * @param theta closed theta-patch boundary to splice; must not be {@code null}
+	 * @return closed, fully indexed final patches in directed boundary order
+	 * @throws IllegalStateException if a non-polar boundary has an odd crossing
+	 *         count or the directed fragments cannot be assembled consistently
 	 */
 	public static List<Patch> splice(ThetaPatch theta) {
-	    SphericalGrid sphGrid = ChimeraApp.getInstance().getSphericalGrid();
-	    ArrayList<Patch> result = new ArrayList<>();
-
-	    List<Crossing> allCrossings = theta.getAllPhiCrossings();
-	    allCrossings = Crossing.removeDuplicates(allCrossings);
-
-	    int numPhiCrossings = allCrossings.size();
-
-	    // If there are no phi crossings, we can create a single patch without splicing.
-//	    if (numPhiCrossings == 0) {
-//	        int phiIndex = bestPhiIndex(theta, sphGrid);
-//	        result.add(new Patch(theta.curves, theta.nx, theta.ny, theta.nz,
-//	                theta.nTheta, phiIndex));
-//	        return result;
-//	    }
-	    
-	    if (theta.polar()) {
-	    	System.err.println("Polar patch: " + theta.nx + "," + theta.ny + "," + theta.nz + "," + theta.nTheta);
-	    	for (Crossing c : allCrossings) {
-	    		System.err.println("  " + c.summaryString());
-	    	}
-	    }
-
-	    return result;
+	    SphericalGrid sphGrid = ChimeraGridContext.sphericalGrid();
+	    return spliceImplementation(theta, sphGrid);
 	}
 
 	/**
@@ -102,8 +93,9 @@ public class Patch extends BasePatch {
 	 * @return full patches produced from the ThetaPatch, sliced along the spherical
 	 *         phi grid
 	 */
-	public static List<Patch> Xsplice(ThetaPatch theta) {
-	    SphericalGrid sphGrid = ChimeraApp.getInstance().getSphericalGrid();
+	private static List<Patch> spliceImplementation(
+	        ThetaPatch theta,
+	        SphericalGrid sphGrid) {
 	    ArrayList<Patch> result = new ArrayList<>();
 
 	    List<Crossing> allCrossings = theta.getAllPhiCrossings();
@@ -391,6 +383,10 @@ public class Patch extends BasePatch {
 		Map<Integer, Integer> counts = new HashMap<>();
 
 		for (BaseCurve curve : theta.curves) {
+			if (phiCutIndexIncludingPole(curve, phiGrid) >= 0) {
+				continue;
+			}
+
 			double midPhi = curve.phi(0.5);
 			int idx = phiGrid.locateInterval(midPhi);
 			if (idx >= 0) {
@@ -400,12 +396,6 @@ public class Patch extends BasePatch {
 
 		if (counts.isEmpty()) {
 			return phiGrid.locateInterval(theta.curves.get(0).sv0.phi);
-		}
-
-		if (counts.size() > 1) {
-			System.err.printf("[Patch] bestPhiIndex: midpoints span %d phi cells "
-					+ "for ThetPatch (%d,%d,%d, %d); using majority%n",
-					counts.size(), theta.nx, theta.ny, theta.nz, theta.nTheta);
 		}
 
 		return counts.entrySet().stream().max(Map.Entry.comparingByValue()).get().getKey();
@@ -611,12 +601,11 @@ public class Patch extends BasePatch {
 	        }
 
 	        if (match == null) {
-	            System.err.printf(
-	                    "[Patch] buildPhiConnectorPairs: unmatched crossing "
-	                            + "for theta patch (%d,%d,%d,%d): %s%n",
+	            throw new IllegalStateException(String.format(
+	                    "Unmatched phi crossing for theta patch "
+	                            + "(%d,%d,%d,%d): %s",
 	                    theta.nx, theta.ny, theta.nz, theta.nTheta,
-	                    c.summaryString());
-	            continue;
+	                    c.summaryString()));
 	        }
 
 	        Point3D.Double p0 = projectToPhi(
@@ -764,19 +753,16 @@ public class Patch extends BasePatch {
 	                 * This should now be uncommon. If this happens often, it is worth logging.
 	                 */
 	                if (!connected) {
-	                    phiIt = phiCurves.iterator();
-	                    while (phiIt.hasNext()) {
-	                        BaseCurve phi = phiIt.next();
-
-	                        if (connects(c, phi)) {
-	                            patchCurves.add(phi);
-	                            phiIt.remove();
-	                            c = phi;
-	                            connected = true;
-	                            break;
-	                        }
+	                    BaseCurve phi = nearestPoleConnectorOnBackwardBoundary(
+	                            c, loopStart, allCurves, phiCurves);
+	                    if (phi != null) {
+	                        patchCurves.add(phi);
+	                        phiCurves.remove(phi);
+	                        c = phi;
+	                        connected = true;
 	                    }
 	                }
+
 	            }
 
 	            /*
@@ -818,34 +804,78 @@ public class Patch extends BasePatch {
 	            }
 
 	            if (!connected) {
-	                System.err.printf(
-	                        "[Patch] assemblePatches: could not connect curve %s "
-	                                + "in theta patch (%d,%d,%d,%d) with %d crossings%n",
-	                        c.shortString(),
-	                        theta.nx, theta.ny, theta.nz, theta.nTheta,
-	                        crossings.size());
-	                break;
+	                throw new IllegalStateException(String.format(
+	                        "Could not connect curve %s in theta patch "
+	                                + "(%d,%d,%d,%d) with %d crossings.",
+	                        c.shortString(), theta.nx, theta.ny, theta.nz,
+	                        theta.nTheta, crossings.size()));
 	            }
 
 	            madeLoop = makesLoop(patchCurves);
 
 	            if (madeLoop) {
-	                try {
-	                    int phiIndex = bestPhiIndexForLoop(patchCurves, sphGrid);
-	                    Patch patch = new Patch(
-	                            patchCurves,
-	                            theta.nx, theta.ny, theta.nz,
-	                            theta.nTheta, phiIndex);
-	                    result.add(patch);
-	                } catch (IllegalArgumentException ex) {
-	                    System.err.printf("[Patch] assemblePatches: %s%n",
-	                            ex.getMessage());
-	                }
+	                int phiIndex = bestPhiIndexForLoop(patchCurves, sphGrid);
+	                Patch patch = new Patch(
+	                        patchCurves,
+	                        theta.nx, theta.ny, theta.nz,
+	                        theta.nTheta, phiIndex);
+	                result.add(patch);
 	            }
 	        }
 	    }
 
 	    return result;
+	}
+
+	/**
+	 * Finds the closest unused pole-to-boundary connector encountered while walking
+	 * backward from the current loop start through directed boundary fragments.
+	 *
+	 * <p>At a pole, the outgoing meridian must end at this point. Choosing it
+	 * closes exactly one phi wedge; choosing any other meridian causes the loop to
+	 * absorb one or more neighboring wedges before eventually returning.</p>
+	 *
+	 * @param incomingPoleCurve connector that has just reached the pole
+	 * @param loopStart first point of the loop being assembled
+	 * @param boundaryCurves unused directed boundary fragments
+	 * @param phiCurves unused directed meridian connectors
+	 * @return the nearest connector that closes one wedge, or {@code null} when no
+	 *         connector endpoint occurs on the backward boundary chain
+	 */
+	private static BaseCurve nearestPoleConnectorOnBackwardBoundary(
+	        BaseCurve incomingPoleCurve,
+	        Point3D.Double loopStart,
+	        List<BaseCurve> boundaryCurves,
+	        List<BaseCurve> phiCurves) {
+
+	    Point3D.Double current = loopStart;
+	    List<BaseCurve> remaining = new ArrayList<>(boundaryCurves);
+
+	    for (int step = 0; step <= boundaryCurves.size(); step++) {
+	        for (BaseCurve candidate : phiCurves) {
+	            if (connects(incomingPoleCurve, candidate)
+	                    && pointsClose(candidate.p1, current)) {
+	                return candidate;
+	            }
+	        }
+
+	        BaseCurve previous = null;
+	        for (BaseCurve candidate : remaining) {
+	            if (pointsClose(candidate.p1, current)) {
+	                previous = candidate;
+	                break;
+	            }
+	        }
+
+	        if (previous == null) {
+	            return null;
+	        }
+
+	        remaining.remove(previous);
+	        current = previous.p0;
+	    }
+
+	    return null;
 	}
 	
 	/**

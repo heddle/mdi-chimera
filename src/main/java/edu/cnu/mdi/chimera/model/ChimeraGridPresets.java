@@ -13,9 +13,56 @@ import edu.cnu.mdi.chimera.grid.ThetaSpacing;
 public final class ChimeraGridPresets {
 
     /**
+     * Named grids displayed in the test-grid gallery, ordered from the smallest
+     * smoke test to the largest stress test.
+     */
+    public enum GalleryPreset {
+        TINY_SMOKE("Tiny Smoke — Cartesian 6³, spherical 6×8"),
+        SMALL_DEBUG("Small Debug — Cartesian 12³, spherical 12×16"),
+        MEDIUM_UNIFORM("Medium Uniform — Cartesian 18³, spherical 18×24"),
+        COARSE_GSM("Coarse GSM — Cartesian 30³, spherical 24×32"),
+        PAPER_TEST("Paper Test — Cartesian 33×34×33, spherical 48×32"),
+        DENSE_STRESS("Dense Stress — Cartesian 42³, spherical 36×48");
+
+        private final String label;
+
+        GalleryPreset(String label) {
+            this.label = label;
+        }
+
+        /** @return a fresh immutable grid specification for this preset */
+        public ChimeraGridSpec createGridSpec() {
+            return switch (this) {
+            case TINY_SMOKE -> tinySmokeGrid();
+            case SMALL_DEBUG -> smallDebugGrid();
+            case MEDIUM_UNIFORM -> mediumUniformGrid();
+            case PAPER_TEST -> paperTestGrid();
+            case COARSE_GSM -> coarseGsmGrid();
+            case DENSE_STRESS -> denseStressGrid();
+            };
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
+    /**
      * Hidden constructor for utility class.
      */
     private ChimeraGridPresets() {
+    }
+
+    /**
+     * Creates the smallest gallery grid, intended for quick smoke tests and
+     * step-through debugging.
+     *
+     * @return tiny symmetric test grid
+     */
+    public static ChimeraGridSpec tinySmokeGrid() {
+        return generatedGalleryGrid("Tiny Smoke Grid", 5.0, 4.0, 6, 6, 8,
+                ThetaSpacing.UNIFORM_THETA);
     }
 
     /**
@@ -81,20 +128,58 @@ public final class ChimeraGridPresets {
     }
 
     /**
+     * Creates a middle-sized uniform Cartesian grid with equal-area theta bands.
+     *
+     * @return medium gallery grid
+     */
+    public static ChimeraGridSpec mediumUniformGrid() {
+        return generatedGalleryGrid("Medium Uniform Grid", 7.0, 5.0, 18,
+                18, 24, ThetaSpacing.UNIFORM_COS_THETA);
+    }
+
+    /**
      * Creates a coarse GSM grid suitable for early visualization testing.
      *
      * @return a coarse GSM grid
      */
     public static ChimeraGridSpec coarseGsmGrid() {
         CartesianGrid cartesianGrid = CartesianGrid.uniform(
-                -10.0, 10.0, 30,
-                -10.0, 10.0, 30,
-                -10.0, 10.0, 30);
+                -10.013, 9.987, 30,
+                -9.983, 10.017, 30,
+                -10.011, 9.989, 30);
 
         SphericalGrid sphericalGrid = SphericalGrid.generated(
                 6.0, 24, 32, ThetaSpacing.UNIFORM_COS_THETA);
 
         return new ChimeraGridSpec("Coarse GSM Grid", CoordinateSystem.GSM,
+                LengthUnit.EARTH_RADII, cartesianGrid, sphericalGrid);
+    }
+
+    /**
+     * Creates the largest gallery grid for performance and export/import stress
+     * testing while remaining practical for interactive use.
+     *
+     * @return dense gallery grid
+     */
+    public static ChimeraGridSpec denseStressGrid() {
+        return generatedGalleryGrid("Dense Stress Grid", 8.0, 6.0, 42,
+                36, 48, ThetaSpacing.UNIFORM_THETA);
+    }
+
+    /** Builds a centered, symmetric generated gallery grid. */
+    private static ChimeraGridSpec generatedGalleryGrid(String name,
+            double cartesianHalfExtent, double sphereRadius, int cartesianCells,
+            int thetaCells, int phiCells, ThetaSpacing thetaSpacing) {
+        CartesianGrid cartesianGrid = CartesianGrid.uniform(
+                -cartesianHalfExtent - 0.013, cartesianHalfExtent - 0.013,
+                cartesianCells,
+                -cartesianHalfExtent + 0.017, cartesianHalfExtent + 0.017,
+                cartesianCells,
+                -cartesianHalfExtent - 0.011, cartesianHalfExtent - 0.011,
+                cartesianCells);
+        SphericalGrid sphericalGrid = SphericalGrid.generated(sphereRadius,
+                thetaCells, phiCells, thetaSpacing);
+        return new ChimeraGridSpec(name, CoordinateSystem.GSM,
                 LengthUnit.EARTH_RADII, cartesianGrid, sphericalGrid);
     }
 }

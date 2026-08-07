@@ -3,7 +3,6 @@ package edu.cnu.mdi.chimera.patch;
 import java.util.ArrayList;
 import java.util.List;
 
-import edu.cnu.mdi.chimera.app.ChimeraApp;
 import edu.cnu.mdi.chimera.cell.Cell;
 import edu.cnu.mdi.chimera.cell.IntersectionType;
 import edu.cnu.mdi.chimera.curve.BaseCurve;
@@ -13,6 +12,7 @@ import edu.cnu.mdi.chimera.edge.Edge;
 import edu.cnu.mdi.chimera.grid.CartesianGrid;
 import edu.cnu.mdi.chimera.grid.GridSupport;
 import edu.cnu.mdi.chimera.grid.SphericalGrid;
+import edu.cnu.mdi.chimera.model.ChimeraGridContext;
 import edu.cnu.mdi.chimera.util.Point3D;
 
 /**
@@ -100,7 +100,7 @@ public class PrePatch extends BasePatch {
                 ") has no ordered edges.");
         }
         
-        CartesianGrid cartGrid = ChimeraApp.getInstance().getCartesianGrid();
+        CartesianGrid cartGrid = ChimeraGridContext.cartesianGrid();
 
         // Pre-fetch all eight cell corners once — used for every face lookup.
         double[][] cellCorners = GridSupport.getCellCorners(
@@ -130,9 +130,8 @@ public class PrePatch extends BasePatch {
             Point3D.Double[] faceCorners = getFaceCorners(cellCorners, faceIndex);
 
             GeneralCurve curve = new GeneralCurve(
-					p0, p1, ChimeraApp.getInstance().getRadius(),
+					p0, p1, ChimeraGridContext.radius(),
 					faceCorners[0], faceCorners[1], faceCorners[2]);
-            curve.getThetaCrossings(); // precompute theta crossings for diagnostics
             curves.add(curve);
         }
 
@@ -158,7 +157,7 @@ public class PrePatch extends BasePatch {
      */
     @Override
     public boolean containsPoint(double x, double y, double z) {
-    	CartesianGrid cartesianGrid = ChimeraApp.getInstance().getCartesianGrid();
+		CartesianGrid cartesianGrid = ChimeraGridContext.cartesianGrid();
         int[] idx = cartesianGrid.getIndices(x, y, z, new int[3]);
         return idx[0] == nx && idx[1] == ny && idx[2] == nz;
     }
@@ -189,37 +188,20 @@ public class PrePatch extends BasePatch {
         };
     }
 
-    // -----------------------------------------------------------------------
-    // Diagnostics
-    // -----------------------------------------------------------------------
-
     /**
-     * Prints a human-readable summary of this prepatch.
-     */
-    public void printSummary() {
-        System.out.printf("PrePatch [%d,%d,%d]  curves=%d  polar=N%s S%s%n",
-                nx, ny, nz, curves.size(),
-                enclosesNorthPole() ? "✓" : "✗",
-                enclosesSouthPole() ? "✓" : "✗");
-        for (int i = 0; i < curves.size(); i++) {
-            System.out.printf("  curve[%d] %s%n", i, curves.get(i));
-        }
-        System.out.printf("  area (n=5):  %.6e%n", areaEstimate(5));
-        System.out.printf("  perimeter:   %.6f%n", perimeter());
-    }
-
-    /**
-     * Builds a PrePatch list from all non-Kiss intersecting cells and prints
-     * a one-line diagnostic summary.
+     * Builds one prepatch for every non-kiss intersecting cell.
      *
-     * @param cells    the full list of intersecting cells from the scanner
-     * @param cartGrid the Cartesian grid
-     * @param sphGrid  the spherical grid
+     * <p>Construction is fail-fast. Omitting a cell whose boundary could not be
+     * assembled would leave a hole in the analytic spherical covering, so an
+     * invalid cell is reported as an exception rather than logged and skipped.</p>
+     *
+     * @param cells the full list of intersecting cells from the scanner
      * @return list of PrePatches, one per non-Kiss cell
+     * @throws IllegalStateException if a non-kiss cell cannot produce a valid
+     *         closed prepatch
      */
     public static List<PrePatch> buildAll(List<Cell> cells) {
         List<PrePatch> patches = new ArrayList<>();
-        int failed = 0;
 
         for (Cell cell : cells) {
             if (cell.getIntersectionType() == IntersectionType.KISS) {
@@ -228,33 +210,13 @@ public class PrePatch extends BasePatch {
             try {
                 patches.add(PrePatch.from(cell));
             } catch (IllegalArgumentException ex) {
-                failed++;
-                System.err.printf("[PrePatch] Failed for cell (%d,%d,%d): %s%n",
-                        cell.nx, cell.ny, cell.nz, ex.getMessage());
+				throw new IllegalStateException(String.format(
+						"Could not build prepatch for cell (%d,%d,%d).",
+						cell.nx, cell.ny, cell.nz), ex);
             }
         }
-
-        System.out.printf("PrePatch build: %d succeeded, %d failed%n",
-                patches.size(), failed);
         return patches;
     }
-    
-    /**
-	 * Counts the total number of theta crossings across all curves in this
-	 * prepatch. This is a diagnostic method.
-	 *
-	 * @return total number of theta crossings in this prepatch
-	 */
-    public int getTotalNumberThetaCrossings() {
-		int count = 0;
-		for (BaseCurve curve : curves) {
-			if (curve instanceof GeneralCurve) {
-				GeneralCurve gc = (GeneralCurve) curve;
-				count += gc.thetaCrossings.size();
-			}
-		}
-		return count;
-	}
     
     /**
 	 * Retrieves a list of all theta crossings across all curves in this
@@ -264,9 +226,8 @@ public class PrePatch extends BasePatch {
 	public List<Crossing> getAllThetaCrossings() {
 		List<Crossing> crossings = new ArrayList<>();
 		for (BaseCurve curve : curves) {
-			if (curve instanceof GeneralCurve) {
-				GeneralCurve gc = (GeneralCurve) curve;
-				crossings.addAll(gc.thetaCrossings);
+			if (curve instanceof GeneralCurve gc) {
+				crossings.addAll(gc.getThetaCrossings());
 			}
 		}
 		return Crossing.removeDuplicates(crossings);

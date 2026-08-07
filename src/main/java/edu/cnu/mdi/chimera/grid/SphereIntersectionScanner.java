@@ -182,7 +182,6 @@ public class SphereIntersectionScanner {
             
             KissGeometry geometry = new KissGeometry(cell, grid, radius);
             cell.setKissGeometry(geometry);
-            geometry.printSummary();
             return cell;
         }
 

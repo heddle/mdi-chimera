@@ -5,8 +5,8 @@ import java.util.List;
 import org.apache.commons.math3.analysis.UnivariateFunction;
 import org.apache.commons.math3.analysis.integration.RombergIntegrator;
 
-import edu.cnu.mdi.chimera.app.ChimeraApp;
 import edu.cnu.mdi.chimera.grid.SphericalGrid;
+import edu.cnu.mdi.chimera.model.ChimeraGridContext;
 import edu.cnu.mdi.chimera.util.MathUtil;
 import edu.cnu.mdi.chimera.util.Point3D;
 import edu.cnu.mdi.chimera.util.SphericalVector;
@@ -233,27 +233,25 @@ public abstract class BaseCurve {
     /**
 	 * Returns a list of crossings where this curve intersects the φ grid lines.
 	 *
-	 * <p>The default implementation returns {@code null}; only {@link ThetaCurve}
-	 * and {@link GeneralCurve} override this method to compute actual crossings.</p>
+	 * <p>The default implementation returns an empty immutable list; only
+	 * {@link ThetaCurve} and {@link GeneralCurve} compute crossings.</p>
 	 *
-	 * @return list of φ crossings, or {@code null} if not applicable
+	 * @return list of phi crossings; never {@code null}
 	 */
 	public List<Crossing> getPhiCrossings() {
-		// default implementation returns null; only ThetaCurve and GeneralCurve override this method to compute actual crossings
-		return null;
+		return List.of();
 	}
 	
 	/**
 	 * Returns a list of sub-curves resulting from splitting this curve at φ crossings.
 	 *
-	 * <p>The default implementation returns {@code null}; only {@link ThetaCurve}
-	 * and {@link GeneralCurve} override this method to compute actual splits at φ crossings.</p>
+	 * <p>The default implementation returns this curve as the sole immutable list
+	 * element. Subclasses with possible phi crossings override it.</p>
 	 *
-	 * @return list of sub-curves split at φ crossings, or {@code null} if not applicable
+	 * @return ordered curve pieces; never {@code null} or empty
 	 */
 	public List<? extends BaseCurve> splitAtPhiCrossings() {
-		// default implementation returns null; only ThetaCurve and GeneralCurve override this method to compute actual splits at φ crossings
-		return null;
+		return List.of(this);
 	}
 	
 	
@@ -402,7 +400,7 @@ public abstract class BaseCurve {
      */
     public int getMidpointThetaIndex() {
     	double midTheta = theta(0.5);
-    	SphericalGrid grid = ChimeraApp.getInstance().getSphericalGrid();
+		SphericalGrid grid = ChimeraGridContext.sphericalGrid();
     	return grid.getThetaGrid().cellIndex(midTheta);
     }
 

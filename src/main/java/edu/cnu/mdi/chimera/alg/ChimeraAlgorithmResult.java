@@ -174,8 +174,10 @@ public class ChimeraAlgorithmResult {
 	// Final Patches
     // -----------------------------------------------------------------------
 
+		/** @return sorted final patches, or {@code null} before phi splicing */
 		public List<Patch> getPatches() { return patches; }
-		
+
+		/** @return number of final patches, or zero before phi splicing */
 		public int getPatchCount() { return patches == null ? 0 : patches.size(); }
 		
 		/**
@@ -212,13 +214,17 @@ public class ChimeraAlgorithmResult {
         int kissCount = getKissCellCount();
         int nonKiss  = total - kissCount;
 
-        if (total < 1) {
-            return;
+        /*
+         * Imported interchange files intentionally contain final patches but not
+         * the intermediate intersecting-cell scan. Each available algorithm stage
+         * must therefore contribute feedback independently; absence of cells must
+         * not suppress the imported final-patch count and area.
+         */
+        if (intersectingCells != null) {
+            feedbackList.add(String.format(
+                    "%sintersecting cells  non-kiss: %d  kiss: %d  total: %d",
+                    colorString, nonKiss, kissCount, total));
         }
-
-        feedbackList.add(String.format(
-                "%sintersecting cells  non-kiss: %d  kiss: %d  total: %d",
-                colorString, nonKiss, kissCount, total));
 
         if (prePatches != null) {
             feedbackList.add(String.format(
@@ -227,7 +233,8 @@ public class ChimeraAlgorithmResult {
         }
         if (thetaPatches != null) {
             feedbackList.add(String.format(
-                    "%stheta patches: %d normalized area: %.12f", colorString, thetaPatches.size(), thetaPatchArea, thetaPatchArea));
+                    "%stheta patches: %d normalized area: %.12f", colorString,
+                    thetaPatches.size(), thetaPatchArea));
         }
         if (patches != null) {
 			feedbackList.add(String.format(

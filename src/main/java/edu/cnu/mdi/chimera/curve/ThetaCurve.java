@@ -5,9 +5,9 @@ import org.apache.commons.math3.analysis.UnivariateFunction;
 import java.util.ArrayList;
 import java.util.List;
 
-import edu.cnu.mdi.chimera.app.ChimeraApp;
 import edu.cnu.mdi.chimera.grid.Grid1D;
 import edu.cnu.mdi.chimera.grid.SphericalGrid;
+import edu.cnu.mdi.chimera.model.ChimeraGridContext;
 import edu.cnu.mdi.chimera.util.MathUtil;
 import edu.cnu.mdi.chimera.util.Point3D;
 import edu.cnu.mdi.chimera.util.SphericalVector;
@@ -38,7 +38,7 @@ public class ThetaCurve extends BaseCurve {
     private final double phi0;
     
     /** Cached list of crossings where the curve crosses phi grid lines. */
-    public List<Crossing> phiCrossings;
+    private List<Crossing> phiCrossings;
 
     // -----------------------------------------------------------------------
     // Construction
@@ -81,6 +81,26 @@ public class ThetaCurve extends BaseCurve {
         this.thetaStar = thetaStar;
         this.phi0      = phi0;
         this.deltaPhi  = deltaPhi;
+    }
+
+    /**
+     * Reconstructs an explicitly parameterized directed constant-theta arc.
+     *
+     * <p>This factory is intended for lossless interchange-file import. Unlike
+     * the ordinary constructor it does not infer or normalize the angular sweep,
+     * so complementary long arcs retain their exported direction and extent.</p>
+     *
+     * @param p0 start point on the sphere
+     * @param p1 end point on the sphere
+     * @param r sphere radius
+     * @param thetaStar constant colatitude in radians
+     * @param phi0 starting azimuth in radians
+     * @param deltaPhi signed azimuthal sweep in radians
+     * @return the reconstructed directed arc
+     */
+    public static ThetaCurve parameterized(Point3D.Double p0, Point3D.Double p1,
+            double r, double thetaStar, double phi0, double deltaPhi) {
+        return new ThetaCurve(p0, p1, r, thetaStar, phi0, deltaPhi);
     }
     
     /**
@@ -175,7 +195,7 @@ public class ThetaCurve extends BaseCurve {
             return phiCrossings;
         }
 
-        SphericalGrid grid = ChimeraApp.getInstance().getSphericalGrid();
+        SphericalGrid grid = ChimeraGridContext.sphericalGrid();
         Grid1D phiGrid = grid.getPhiGrid();
 
         double start = phi0;
@@ -390,6 +410,9 @@ public class ThetaCurve extends BaseCurve {
 
     /** @return the constant polar angle θ* in radians */
     public double getThetaStar() { return thetaStar; }
+
+    /** @return the starting azimuth φ₀ in radians */
+    public double getPhi0() { return phi0; }
 
     /** @return the signed azimuthal sweep Δφ in radians */
     public double getDeltaPhi()  { return deltaPhi; }

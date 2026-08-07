@@ -9,6 +9,7 @@ import edu.cnu.mdi.chimera.grid.CartesianGrid;
 import edu.cnu.mdi.chimera.grid.SphereIntersectionScanner;
 import edu.cnu.mdi.chimera.grid.SphericalGrid;
 import edu.cnu.mdi.chimera.model.ChimeraGridSpec;
+import edu.cnu.mdi.chimera.model.ChimeraGridContext;
 import edu.cnu.mdi.chimera.patch.Patch;
 import edu.cnu.mdi.chimera.patch.PrePatch;
 import edu.cnu.mdi.chimera.patch.ThetaPatch;
@@ -16,13 +17,28 @@ import edu.cnu.mdi.chimera.patch.ThetaPatch;
 public class ChimeraAlgorithm {
 
     /**
-     * The main entry point for the algorithm. It takes a ChimeraGridSpec as
-     * input, which contains both the Cartesian grid and the Spherical grid
-     * specifications. It returns a ChimeraAlgorithmResult containing the list
-     * of intersecting cells and the prepatches built from them.
+     * Computes the analytic intersection of a Cartesian grid and a spherical
+     * surface grid.
+     *
+     * <p>The pipeline classifies sphere-intersecting Cartesian cells, constructs
+     * one directed closed prepatch boundary for every supported non-kiss cell,
+     * splices those boundaries at theta grid lines, and finally splices each
+     * theta patch at phi grid lines. Returned final patches carry complete
+     * {@code (nx, ny, nz, nTheta, nPhi)} indices and closed directed boundaries.</p>
+     *
+     * <p>Kiss intersections are retained in the result for diagnostics but do
+     * not yet generate patches, matching the limitation documented in the
+     * thesis.</p>
+     *
+     * @param gridSpec Cartesian and spherical grids to intersect
+     * @return cells and every intermediate and final patch stage
+     * @throws NullPointerException if {@code gridSpec} is {@code null}
+     * @throws IllegalStateException if any supported cell cannot form a closed
+     *         patch or a splice cannot preserve directed-loop topology
      */
     public static ChimeraAlgorithmResult run(ChimeraGridSpec gridSpec) {
         Objects.requireNonNull(gridSpec, "gridSpec must not be null.");
+        ChimeraGridContext.activate(gridSpec);
         ChimeraAlgorithmResult result = ChimeraAlgorithmResult.empty();
 
         CartesianGrid cartGrid = gridSpec.getCartesianGrid();
@@ -53,9 +69,6 @@ public class ChimeraAlgorithm {
         result.setPatches(patches);
         System.out.println("Phi splice produced " + patches.size() + " final patches.");
         
-        // TODO: Step 4 — phi splice
-        // TODO: Step 5 — area and perimeter
-
         return result;
     }
 
