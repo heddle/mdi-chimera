@@ -39,6 +39,7 @@ import edu.cnu.mdi.ui.colors.ScientificColorMap;
 import edu.cnu.mdi.ui.colors.X11Colors;
 import edu.cnu.mdi.util.PropertyUtils;
 import edu.cnu.mdi.util.UnicodeUtils;
+import edu.cnu.mdi.view.AbstractViewInfo;
 
 @SuppressWarnings("serial")
 public class ChimeraView2D extends MapView2D
@@ -135,6 +136,31 @@ public class ChimeraView2D extends MapView2D
 	private void gridChange() {
 		Log.getInstance().config("Grid changed ");
 		refresh();
+	}
+
+	/**
+	 * Gets the shared Chimera model backing this view.
+	 * <p>
+	 * Exposed so {@link ChimeraView2DInfo} can read live grid/algorithm/Monte
+	 * Carlo state for the "Info" dialog's technical notes.
+	 * </p>
+	 *
+	 * @return the shared Chimera model
+	 */
+	ChimeraModel getModel() {
+		return model;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>Overridden to replace the generic, demo-oriented {@code MapViewInfo}
+	 * inherited from {@link edu.cnu.mdi.mapping.MapView2D} with {@link
+	 * ChimeraView2DInfo}, which describes what Chimera itself does.</p>
+	 */
+	@Override
+	public AbstractViewInfo getViewInfo() {
+		return new ChimeraView2DInfo(this);
 	}
 
 	/**
